@@ -9,6 +9,7 @@ import type { IYAKind } from "../types";
 import { logInfo } from "../utils/logger";
 import { isValidYoutubeUrl } from "../utils/youtubeUtils";
 import { MusicService } from "../services/MusicService";
+import { ChannelRegistryService } from "../services/ChannelRegistryService";
 
 const iyaHandler = (message: Message, kind: IYAKind): void => {
 	logInfo(`Iya! trigger detected from ${message.author.username}`);
@@ -34,8 +35,19 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		return;
 	}
 
-	// YouTubeリンクの検出
 	if (isValidYoutubeUrl(message.content)) {
+		// サーバー内のメッセージのみ処理
+		if (!message.guild) return;
+
+		// チャンネル登録サービスを取得
+		const channelRegistry = ChannelRegistryService.getInstance();
+
+		// このチャンネルが登録されているか確認
+		if (!channelRegistry.isRegistered(message.guild.id, message.channelId)) {
+			// 登録されていないチャンネルのメッセージは無視
+			return;
+		}
+
 		const member = message.member as GuildMember;
 		const voiceChannel = member?.voice.channel as VoiceChannel;
 
@@ -65,6 +77,5 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		logInfo(
 			`YouTube URL検出: ${message.content}, サーバー: ${message.guild.name}`,
 		);
-		return;
 	}
 };
