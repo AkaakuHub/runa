@@ -5,11 +5,11 @@ import type {
 	VoiceChannel,
 } from "discord.js";
 import { IyaResponse } from "../response/Iya";
+import { ChannelRegistryService } from "../services/ChannelRegistryService";
+import { MusicService } from "../services/MusicService";
 import type { IYAKind } from "../types";
 import { logInfo } from "../utils/logger";
 import { isValidYoutubeUrl } from "../utils/youtubeUtils";
-import { MusicService } from "../services/MusicService";
-import { ChannelRegistryService } from "../services/ChannelRegistryService";
 
 const iyaHandler = (message: Message, kind: IYAKind): void => {
 	logInfo(`Iya! trigger detected from ${message.author.username}`);
@@ -69,7 +69,10 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 			message.content,
 			message.guild.id,
 		);
-		await message.reply(response);
+		// レスポンスが空でない場合のみ返信（埋め込みメッセージが送信済みの場合は空文字が返る）
+		if (response) {
+			await message.reply(response);
+		}
 
 		// キューの処理を開始（再生中でなければ再生開始）
 		await musicService.processQueue(message.guild.id);

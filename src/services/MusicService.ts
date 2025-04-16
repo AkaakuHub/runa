@@ -8,7 +8,7 @@ import {
 	getVoiceConnection,
 	joinVoiceChannel,
 } from "@discordjs/voice";
-import { TextChannel, VoiceChannel } from "discord.js";
+import { EmbedBuilder, Message, TextChannel, VoiceChannel } from "discord.js";
 import { logError, logInfo } from "../../src/utils/logger";
 import { downloadYoutubeAudio } from "../utils/youtubeUtils";
 import { QueueManager } from "./QueueManager";
@@ -22,6 +22,7 @@ export class MusicService {
 	private currentResource: any; // 現在再生中のリソース
 	private currentVolume = 0.2; // デフォルト音量20%
 	private currentPlayingUrl?: string; // 現在再生中のURL
+	private statusMessage?: Message; // ステータス表示用メッセージの参照
 
 	private constructor() {
 		this.player = createAudioPlayer({
@@ -67,6 +68,43 @@ export class MusicService {
 			MusicService.instance = new MusicService();
 		}
 		return MusicService.instance;
+	}
+
+	// ステータスメッセージを送信または更新するヘルパーメソッド
+	private async updateStatusMessage(
+		content: string,
+		color: number = 0x0099ff,
+		title?: string,
+	): Promise<void> {
+		if (!this.currentTextChannel) return;
+
+		const embed = new EmbedBuilder().setColor(color).setDescription(content);
+
+		if (title) {
+			embed.setTitle(title);
+		}
+
+		try {
+			if (this.statusMessage) {
+				// 既存のメッセージを編集
+				await this.statusMessage.edit({ embeds: [embed] });
+			} else {
+				// 新しいメッセージを送信
+				this.statusMessage = await this.currentTextChannel.send({
+					embeds: [embed],
+				});
+			}
+		} catch (error) {
+			logError(`メッセージ更新エラー: ${error}`);
+			// エラーが発生した場合は新しいメッセージを送信
+			try {
+				this.statusMessage = await this.currentTextChannel.send({
+					embeds: [embed],
+				});
+			} catch (innerError) {
+				logError(`メッセージ送信エラー: ${innerError}`);
+			}
+		}
 	}
 
 	public async joinChannel(
@@ -144,13 +182,19 @@ export class MusicService {
 			connection.subscribe(this.player);
 
 			this.currentTextChannel = textChannel;
-			await textChannel.send(
+			await this.updateStatusMessage(
 				`ボイスチャンネル「${voiceChannel.name}」に接続しました`,
+				0x00ff00, // 緑色
+				"接続成功",
 			);
 			return true;
 		} catch (error) {
 			logError(`ボイスチャンネル接続エラー: ${error}`);
-			await textChannel.send("ボイスチャンネルへの接続に失敗しました");
+			await this.updateStatusMessage(
+				"ボイスチャンネルへの接続に失敗しました",
+				0xff0000, // 赤色
+				"接続エラー",
+			);
 			return false;
 		}
 	}
@@ -184,18 +228,27 @@ export class MusicService {
 
 			// キューに追加
 			const queuePosition = this.queueManager.addToQueue(url, guildId);
-
 			const truncatedUrl = url.replace("https://", "");
 
-			// キューの最初の曲なら再生を開始
+			// 埋め込みメッセージを作成
+			let statusText: string;
 			if (queuePosition === 1 && !this.isPlaying) {
-				return `${truncatedUrl} の音声DLを開始します。再生キューの1番目に追加しました。すぐに再生を開始します。`;
+				statusText = `${truncatedUrl} の音声DLを開始します。\n再生キューの1番目に追加しました。すぐに再生を開始します。`;
+				await this.updateStatusMessage(statusText, 0x0099ff, "キューに追加");
 			} else {
-				return `${truncatedUrl} の音声DLを開始します。再生キューの${queuePosition}番目に追加しました。`;
+				statusText = `${truncatedUrl} の音声DLを開始します。\n再生キューの${queuePosition}番目に追加しました。`;
+				await this.updateStatusMessage(statusText, 0x0099ff, "キューに追加");
 			}
+
+			return ""; // 実際のメッセージはすでに送信済みなので空文字を返す
 		} catch (error) {
 			logError(`キュー追加エラー: ${error}`);
-			return "キューへの追加中にエラーが発生しました";
+			await this.updateStatusMessage(
+				"キューへの追加中にエラーが発生しました",
+				0xff0000,
+				"エラー",
+			);
+			return "";
 		}
 	}
 
@@ -214,8 +267,10 @@ export class MusicService {
 		const connection = getVoiceConnection(guildId);
 		if (!connection) {
 			logError("playNext: ボイス接続が見つかりません");
-			await this.currentTextChannel.send(
+			await this.updateStatusMessage(
 				"ボイスチャンネルに接続されていません。再接続してください。",
+				0xff0000,
+				"接続エラー",
 			);
 			return;
 		}
@@ -226,37 +281,57 @@ export class MusicService {
 			logError(
 				`playNext: 接続が準備完了ではありません (${connection.state.status})`,
 			);
-			// 必要であればここで待機処理を追加することも検討
-			// await entersState(connection, VoiceConnectionStatus.Ready, 5_000);
-			// ただし、通常は joinChannel で ready になっているはず
 		}
 
 		if (!nextItem) {
 			logInfo("playNext: 再生キューは空です");
-			await this.currentTextChannel.send("再生キューが空になりました");
+			await this.updateStatusMessage(
+				"再生キューが空になりました",
+				0xffaa00, // オレンジ色
+				"再生完了",
+			);
 			return;
 		}
 
 		try {
 			this.isPlaying = true;
-			await this.currentTextChannel.send("準備中...");
+			await this.updateStatusMessage(
+				"音声ファイルをダウンロード中...",
+				0xffaa00,
+				"準備中",
+			);
 
 			// YouTube音声をダウンロード
 			const audioFilePath = await downloadYoutubeAudio(nextItem, guildId);
 
 			if (!audioFilePath) {
-				await this.currentTextChannel.send("音声ダウンロードに失敗しました");
+				await this.updateStatusMessage(
+					"音声ダウンロードに失敗しました",
+					0xff0000,
+					"エラー",
+				);
 				this.isPlaying = false;
-				this.queueManager.removeFromQueue(guildId, nextItem); // 失敗したアイテムをキューから削除する処理を追加（QueueManagerに実装が必要）
-				this.playNext(); // 次の曲を試す
+				this.queueManager.removeFromQueue(guildId, nextItem);
+				this.playNext();
 				return;
 			}
+
+			// ステータス更新
+			await this.updateStatusMessage(
+				"音声ファイルを検証中...",
+				0xffaa00,
+				"準備中",
+			);
 
 			logInfo(`playNext: 音声ファイルのパス: ${audioFilePath}`);
 
 			// ファイルの存在確認とサイズ確認
 			if (!fs.existsSync(audioFilePath)) {
-				await this.currentTextChannel.send("音声ファイルが見つかりません");
+				await this.updateStatusMessage(
+					"音声ファイルが見つかりません",
+					0xff0000,
+					"エラー",
+				);
 				this.isPlaying = false;
 				return;
 			}
@@ -265,11 +340,22 @@ export class MusicService {
 			logInfo(`playNext: ファイルサイズ: ${stats.size} バイト`);
 
 			if (stats.size === 0) {
-				await this.currentTextChannel.send("ダウンロードしたファイルが空です");
+				await this.updateStatusMessage(
+					"ダウンロードしたファイルが空です",
+					0xff0000,
+					"エラー",
+				);
 				this.isPlaying = false;
-				fs.unlinkSync(audioFilePath); // 空のファイルを削除
+				fs.unlinkSync(audioFilePath);
 				return;
 			}
+
+			// ステータス更新
+			await this.updateStatusMessage(
+				"音声リソースを準備中...",
+				0xffaa00,
+				"準備中",
+			);
 
 			// 音声リソースを作成
 			logInfo("playNext: 音声リソースを作成中...");
@@ -288,11 +374,13 @@ export class MusicService {
 			const subscription = connection.subscribe(this.player);
 			if (subscription) {
 				logInfo("playNext: プレイヤーのサブスクライブ成功");
-				// デバッグ用にサブスクリプションのタイムアウトを設定（必要に応じて）
-				// setTimeout(() => subscription.unsubscribe(), 10_000);
 			} else {
 				logError("playNext: プレイヤーのサブスクライブに失敗");
-				await this.currentTextChannel.send("音声再生の準備に失敗しました。");
+				await this.updateStatusMessage(
+					"音声再生の準備に失敗しました",
+					0xff0000,
+					"エラー",
+				);
 				this.isPlaying = false;
 				return;
 			}
@@ -303,6 +391,13 @@ export class MusicService {
 				logInfo(`playNext: 音量を${this.currentVolume * 100}%に設定しました`);
 			}
 
+			// ステータス更新
+			await this.updateStatusMessage(
+				`再生開始: ${nextItem}`,
+				0x00ff00, // 緑色
+				"再生中",
+			);
+
 			// 再生開始
 			logInfo("playNext: player.play(resource) を呼び出します");
 			this.player.play(resource);
@@ -311,8 +406,16 @@ export class MusicService {
 			// 再生終了後にファイルを削除するため、ステータス監視
 			this.player.once(AudioPlayerStatus.Idle, () => {
 				logInfo("playNext: AudioPlayerStatus.Idle イベント発生");
-				this.isPlaying = false; // isPlaying を false に設定
-				this.currentPlayingUrl = undefined; // 再生終了時にURLをクリア
+				this.isPlaying = false;
+				this.currentPlayingUrl = undefined;
+
+				// 再生完了メッセージの更新
+				this.updateStatusMessage(
+					`再生完了: ${nextItem}`,
+					0xffaa00, // オレンジ色
+					"再生完了",
+				);
+
 				try {
 					if (fs.existsSync(audioFilePath)) {
 						fs.unlinkSync(audioFilePath);
@@ -321,7 +424,7 @@ export class MusicService {
 				} catch (error) {
 					logError(`playNext: 一時ファイル削除エラー: ${error}`);
 				}
-				// 次の曲へ (Idleイベント内で呼び出す)
+				// 次の曲へ
 				this.playNext();
 			});
 
@@ -331,6 +434,14 @@ export class MusicService {
 					`playNext: AudioPlayer エラー: ${error.message} - Resource: ${error.resource?.metadata}`,
 				);
 				this.isPlaying = false;
+
+				// エラーメッセージの更新
+				this.updateStatusMessage(
+					`再生エラー: ${error.message}`,
+					0xff0000,
+					"エラー",
+				);
+
 				try {
 					if (fs.existsSync(audioFilePath)) {
 						fs.unlinkSync(audioFilePath);
@@ -338,13 +449,16 @@ export class MusicService {
 				} catch (unlinkError) {
 					logError(`playNext: エラー後のファイル削除エラー: ${unlinkError}`);
 				}
-				this.playNext(); // エラーが発生しても次の曲へ
+				this.playNext();
 			});
 		} catch (error) {
 			logError(`playNext: 再生エラー全体: ${error}`);
-			await this.currentTextChannel.send("再生中にエラーが発生しました");
+			await this.updateStatusMessage(
+				`再生中にエラーが発生しました: ${error}`,
+				0xff0000,
+				"エラー",
+			);
 			this.isPlaying = false;
-			// エラー発生時も次の曲を試す
 			this.playNext();
 		}
 	}
