@@ -10,6 +10,7 @@ import { MusicService } from "../services/MusicService";
 import type { IYAKind } from "../types";
 import { logInfo } from "../utils/logger";
 import { isValidYoutubeUrl } from "../utils/youtubeUtils";
+import { getVoiceConnection } from "@discordjs/voice";
 
 const iyaHandler = (message: Message, kind: IYAKind): void => {
 	logInfo(`Iya! trigger detected from ${message.author.username}`);
@@ -59,10 +60,19 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		}
 
 		const musicService = MusicService.getInstance();
-
-		// ボットがまだボイスチャンネルに入っていない場合は参加
 		const textChannel = message.channel as TextChannel;
-		await musicService.joinChannel(voiceChannel, textChannel);
+
+		// ボイス接続の状態を確認
+		const existingConnection = getVoiceConnection(message.guild.id);
+		const currentVoiceChannelId = existingConnection?.joinConfig.channelId;
+
+		// 接続が存在しない場合、または接続先が別のチャンネルである場合のみ接続処理を実行
+		if (!existingConnection || currentVoiceChannelId !== voiceChannel.id) {
+			await musicService.joinChannel(voiceChannel, textChannel);
+		} else if (textChannel.id !== musicService.getCurrentTextChannelId()) {
+			// テキストチャンネルの更新のみ行う
+			musicService.updateTextChannel(textChannel);
+		}
 
 		// URLをキューに追加
 		const response = await musicService.queueYoutubeUrl(

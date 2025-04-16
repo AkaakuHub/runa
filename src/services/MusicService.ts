@@ -1,6 +1,6 @@
-import * as fs from "fs";
+import * as fs from "node:fs";
 import {
-	AudioPlayer,
+	type AudioPlayer,
 	AudioPlayerStatus,
 	StreamType,
 	createAudioPlayer,
@@ -8,7 +8,12 @@ import {
 	getVoiceConnection,
 	joinVoiceChannel,
 } from "@discordjs/voice";
-import { EmbedBuilder, Message, TextChannel, VoiceChannel } from "discord.js";
+import {
+	EmbedBuilder,
+	type Message,
+	type TextChannel,
+	type VoiceChannel,
+} from "discord.js";
 import { logError, logInfo } from "../../src/utils/logger";
 import { downloadYoutubeAudio } from "../utils/youtubeUtils";
 import { QueueManager } from "./QueueManager";
@@ -73,7 +78,7 @@ export class MusicService {
 	// ステータスメッセージを送信または更新するヘルパーメソッド
 	private async updateStatusMessage(
 		content: string,
-		color: number = 0x0099ff,
+		color = 0x0099ff,
 		title?: string,
 	): Promise<void> {
 		if (!this.currentTextChannel) return;
@@ -112,10 +117,23 @@ export class MusicService {
 		textChannel: TextChannel,
 	): Promise<boolean> {
 		try {
-			// すでに接続済みの場合は再接続する
+			// すでに接続済みの場合の処理
 			const existingConnection = getVoiceConnection(voiceChannel.guild.id);
 			if (existingConnection) {
-				logInfo("既存の接続を破棄して再接続します");
+				// 同じチャンネルに既に接続している場合は、再接続せずにテキストチャンネルの更新のみを行う
+				if (existingConnection.joinConfig.channelId === voiceChannel.id) {
+					logInfo("既に同じボイスチャンネルに接続済みです");
+					this.currentTextChannel = textChannel;
+					await this.updateStatusMessage(
+						`ボイスチャンネル「${voiceChannel.name}」に接続済みです`,
+						0x00ff00, // 緑色
+						"接続状態",
+					);
+					return true;
+				}
+
+				// 別のチャンネルに接続している場合は切断してから再接続
+				logInfo("別のボイスチャンネルに再接続します");
 				existingConnection.destroy();
 				// 接続が完全に破棄されるまで少し待機
 				await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -517,5 +535,15 @@ export class MusicService {
 
 	public isCurrentlyPlaying(): boolean {
 		return this.isPlaying;
+	}
+
+	// 現在のテキストチャンネルIDを取得するメソッド
+	public getCurrentTextChannelId(): string | undefined {
+		return this.currentTextChannel?.id;
+	}
+
+	// テキストチャンネルを更新するメソッド
+	public updateTextChannel(textChannel: TextChannel): void {
+		this.currentTextChannel = textChannel;
 	}
 }
