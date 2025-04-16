@@ -10,22 +10,24 @@ export const RegisterCommand: CommandDefinition = {
 	description: "音楽コマンドを受け付けるチャンネルを登録/解除します",
 	options: [
 		{
-			name: "add",
-			description: "現在のチャンネルを音楽コマンド用チャンネルとして登録します",
+			name: "action",
+			description: "実行するアクション",
 			type: "STRING",
 			required: true,
-		},
-		{
-			name: "remove",
-			description: "現在のチャンネルの音楽コマンドチャンネル登録を解除します",
-			type: "STRING",
-			required: true,
-		},
-		{
-			name: "list",
-			description: "登録済みの音楽コマンドチャンネル一覧を表示します",
-			type: "STRING",
-			required: true,
+			choices: [
+				{
+					name: "add - 現在のチャンネルを音楽コマンド用チャンネルとして登録",
+					value: "add",
+				},
+				{
+					name: "remove - 現在のチャンネルの登録を解除",
+					value: "remove",
+				},
+				{
+					name: "list - 登録済みチャンネル一覧を表示",
+					value: "list",
+				},
+			],
 		},
 	],
 
@@ -41,7 +43,7 @@ export const RegisterCommand: CommandDefinition = {
 			}
 
 			const registry = ChannelRegistryService.getInstance();
-			const subcommand = interaction.options.getSubcommand();
+			const action = interaction.options.getString("action");
 
 			const guildId = interaction.guildId;
 			if (!guildId) {
@@ -49,61 +51,78 @@ export const RegisterCommand: CommandDefinition = {
 				return;
 			}
 
-			if (subcommand === "add") {
-				const channelId = interaction.channelId;
-				const channel = interaction.channel as TextChannel;
+			// アクションに基づいて処理を分岐
+			switch (action) {
+				case "add": {
+					const channelId = interaction.channelId;
+					const channel = interaction.channel as TextChannel;
 
-				if (channel.type !== ChannelType.GuildText) {
-					await interaction.editReply("テキストチャンネルでのみ登録できます");
-					return;
+					if (channel.type !== ChannelType.GuildText) {
+						await interaction.editReply("テキストチャンネルでのみ登録できます");
+						return;
+					}
+
+					const result = registry.registerChannel(guildId, channelId);
+					if (result) {
+						await interaction.editReply(
+							`チャンネル「${channel.name}」を音楽コマンド用チャンネルとして登録しました`,
+						);
+						logInfo(
+							`チャンネル「${channel.name}」を登録: ${interaction.guild.name}`,
+						);
+					} else {
+						await interaction.editReply("このチャンネルは既に登録されています");
+					}
+					break;
 				}
+				case "remove": {
+					const channelId = interaction.channelId;
+					const channel = interaction.channel as TextChannel;
 
-				const result = registry.registerChannel(guildId, channelId);
-				if (result) {
+					const result = registry.unregisterChannel(guildId, channelId);
+					if (result) {
+						await interaction.editReply(
+							`チャンネル「${channel.name}」の登録を解除しました`,
+						);
+						logInfo(
+							`チャンネル「${channel.name}」の登録を解除: ${interaction.guild.name}`,
+						);
+					} else {
+						await interaction.editReply("このチャンネルは登録されていません");
+					}
+					break;
+				}
+				case "list": {
+					const channels = registry.getRegisteredChannels(guildId);
+
+					if (channels.length === 0) {
+						await interaction.editReply(
+							"このサーバーには登録済みの音楽コマンドチャンネルがありません",
+						);
+						return;
+					}
+
+					const channelList = channels
+						.map((id) => {
+							const channel = interaction.client.channels.cache.get(id);
+							return channel ? `<#${id}>` : `不明なチャンネル (${id})`;
+						})
+						.join("\n");
+
 					await interaction.editReply(
-						`チャンネル「${channel.name}」を音楽コマンド用チャンネルとして登録しました`,
+						`**登録済み音楽コマンドチャンネル:**\n${channelList}`,
 					);
-					logInfo(
-						`チャンネル「${channel.name}」を登録: ${interaction.guild.name}`,
-					);
-				} else {
-					await interaction.editReply("このチャンネルは既に登録されています");
+					break;
 				}
-			} else if (subcommand === "remove") {
-				const channelId = interaction.channelId;
-				const channel = interaction.channel as TextChannel;
-
-				const result = registry.unregisterChannel(guildId, channelId);
-				if (result) {
+				default: {
+					// 想定外のアクション値が来た場合の親切なガイド
 					await interaction.editReply(
-						`チャンネル「${channel.name}」の登録を解除しました`,
+						"無効なアクションです。以下のいずれかを選択してください：\n" +
+							"・`add` - 現在のチャンネルを音楽コマンド用チャンネルとして登録します\n" +
+							"・`remove` - 現在のチャンネルの登録を解除します\n" +
+							"・`list` - 登録済みチャンネル一覧を表示します",
 					);
-					logInfo(
-						`チャンネル「${channel.name}」の登録を解除: ${interaction.guild.name}`,
-					);
-				} else {
-					await interaction.editReply("このチャンネルは登録されていません");
 				}
-			} else if (subcommand === "list") {
-				const channels = registry.getRegisteredChannels(guildId);
-
-				if (channels.length === 0) {
-					await interaction.editReply(
-						"このサーバーには登録済みの音楽コマンドチャンネルがありません",
-					);
-					return;
-				}
-
-				const channelList = channels
-					.map((id) => {
-						const channel = interaction.client.channels.cache.get(id);
-						return channel ? `<#${id}>` : `不明なチャンネル (${id})`;
-					})
-					.join("\n");
-
-				await interaction.editReply(
-					`**登録済み音楽コマンドチャンネル:**\n${channelList}`,
-				);
 			}
 		} catch (error) {
 			logError(`registerコマンドエラー: ${error}`);
