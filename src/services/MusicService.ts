@@ -29,6 +29,9 @@ export class MusicService {
 	private currentPlayingUrl?: string; // 現在再生中のURL
 	private statusMessage?: Message; // ステータス表示用メッセージの参照
 
+	// ダウンロード中のURLを管理するマップを追加
+	private downloadingUrls: Map<string, Promise<string | null>> = new Map();
+
 	private constructor() {
 		this.player = createAudioPlayer({
 			behaviors: {
@@ -80,6 +83,7 @@ export class MusicService {
 		content: string,
 		color = 0x0099ff,
 		title?: string,
+		forceNewMessage = false, // 新しいメッセージを強制的に作成するフラグ
 	): Promise<void> {
 		if (!this.currentTextChannel) return;
 
@@ -90,7 +94,7 @@ export class MusicService {
 		}
 
 		try {
-			if (this.statusMessage) {
+			if (this.statusMessage && !forceNewMessage) {
 				// 既存のメッセージを編集
 				await this.statusMessage.edit({ embeds: [embed] });
 			} else {
@@ -109,6 +113,25 @@ export class MusicService {
 			} catch (innerError) {
 				logError(`メッセージ送信エラー: ${innerError}`);
 			}
+		}
+	}
+
+	// 新しいメソッド: バックグラウンドでYouTube音声をダウンロード
+	private async downloadInBackground(
+		url: string,
+		guildId: string,
+	): Promise<string | null> {
+		try {
+			logInfo(`バックグラウンドダウンロード開始: ${url}`);
+			const audioFilePath = await downloadYoutubeAudio(url, guildId);
+			logInfo(`バックグラウンドダウンロード完了: ${url}`);
+			return audioFilePath;
+		} catch (error) {
+			logError(`バックグラウンドダウンロードエラー: ${error}`);
+			return null;
+		} finally {
+			// ダウンロード完了後、マップから削除
+			this.downloadingUrls.delete(url);
 		}
 	}
 
@@ -248,14 +271,30 @@ export class MusicService {
 			const queuePosition = this.queueManager.addToQueue(url, guildId);
 			const truncatedUrl = url.replace("https://", "");
 
-			// 埋め込みメッセージを作成
+			// 埋め込みメッセージを作成 (常に新しいメッセージを作成)
 			let statusText: string;
 			if (queuePosition === 1 && !this.isPlaying) {
 				statusText = `${truncatedUrl} の音声DLを開始します。\n再生キューの1番目に追加しました。すぐに再生を開始します。`;
-				await this.updateStatusMessage(statusText, 0x0099ff, "キューに追加");
+				await this.updateStatusMessage(
+					statusText,
+					0x0099ff,
+					"キューに追加",
+					true,
+				);
 			} else {
 				statusText = `${truncatedUrl} の音声DLを開始します。\n再生キューの${queuePosition}番目に追加しました。`;
-				await this.updateStatusMessage(statusText, 0x0099ff, "キューに追加");
+				await this.updateStatusMessage(
+					statusText,
+					0x0099ff,
+					"キューに追加",
+					true,
+				);
+			}
+
+			// バックグラウンドでダウンロード開始 (すでにダウンロード中でなければ)
+			if (!this.downloadingUrls.has(url)) {
+				const downloadPromise = this.downloadInBackground(url, guildId);
+				this.downloadingUrls.set(url, downloadPromise);
 			}
 
 			return ""; // 実際のメッセージはすでに送信済みなので空文字を返す
@@ -265,6 +304,7 @@ export class MusicService {
 				"キューへの追加中にエラーが発生しました",
 				0xff0000,
 				"エラー",
+				true,
 			);
 			return "";
 		}
@@ -320,7 +360,24 @@ export class MusicService {
 			);
 
 			// YouTube音声をダウンロード
-			const audioFilePath = await downloadYoutubeAudio(nextItem, guildId);
+			let audioFilePath: string | null = null;
+
+			// すでにダウンロード中または完了済みかチェック
+			const downloadingPromise = this.downloadingUrls.get(nextItem);
+			if (downloadingPromise) {
+				// ダウンロード中または完了済みの場合はその結果を待機
+				logInfo(`playNext: 既存のダウンロードを使用: ${nextItem}`);
+				audioFilePath = await downloadingPromise;
+			} else {
+				// まだダウンロードされていない場合は新規ダウンロード開始
+				logInfo(`playNext: 新規ダウンロード開始: ${nextItem}`);
+				await this.updateStatusMessage(
+					"音声ファイルをダウンロード中...",
+					0xffaa00,
+					"準備中",
+				);
+				audioFilePath = await downloadYoutubeAudio(nextItem, guildId);
+			}
 
 			if (!audioFilePath) {
 				await this.updateStatusMessage(
