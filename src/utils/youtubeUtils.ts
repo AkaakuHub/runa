@@ -1,7 +1,7 @@
-import * as fs from "fs";
-import * as path from "path";
-import { exec } from "child_process";
-import { promisify } from "util";
+import { exec } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { promisify } from "node:util";
 import { logError, logInfo } from "../../src/utils/logger";
 
 const execAsync = promisify(exec);
@@ -29,7 +29,7 @@ export async function downloadYoutubeAudio(
 		logInfo(`YouTubeオーディオのダウンロード開始: ${url}`);
 
 		// yt-dlpを使用して音声をダウンロード
-		const command = `yt-dlp ${url} -o ${outputPath} -f bestaudio[ext=m4a] --no-mtime`;
+		const command = `yt-dlp ${url} -o "${outputPath}" -f bestaudio[ext=m4a] --no-mtime`;
 
 		await execAsync(command);
 
