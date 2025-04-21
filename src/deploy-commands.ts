@@ -15,6 +15,7 @@ const rest = new REST({ version: "10" }).setToken(config.token);
 
 // コマンドラインパラメータでリセットフラグを確認
 const shouldReset = process.argv.includes("--reset");
+const shouldResetGlobal = process.argv.includes("--reset-global");
 
 (async () => {
 	try {
@@ -26,6 +27,12 @@ const shouldReset = process.argv.includes("--reset");
 				{ body: [] },
 			);
 			logInfo("コマンドのリセットが完了しました");
+		}
+
+		if (shouldResetGlobal) {
+			logInfo("既存のグローバルコマンドをリセットします...");
+			await rest.put(Routes.applicationCommands(config.clientId), { body: [] });
+			logInfo("グローバルコマンドのリセットが完了しました");
 		}
 
 		// 新しいコマンドを登録
