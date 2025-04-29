@@ -1,3 +1,4 @@
+import { getVoiceConnection } from "@discordjs/voice";
 import type {
 	GuildMember,
 	Message,
@@ -10,7 +11,6 @@ import { MusicService } from "../services/MusicService";
 import type { IYAKind } from "../types";
 import { logInfo } from "../utils/logger";
 import { isValidYoutubeUrl } from "../utils/youtubeUtils";
-import { getVoiceConnection } from "@discordjs/voice";
 
 const iyaHandler = (message: Message, kind: IYAKind): void => {
 	logInfo(`Iya! trigger detected from ${message.author.username}`);
@@ -33,6 +33,12 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	if (match) {
 		const [kind] = match;
 		iyaHandler(message, kind as IYAKind);
+		return;
+	}
+
+	const ngWords = ["AP", "免許"];
+	if (ngWords.some((word) => message.content.includes(word))) {
+		await message.reply("その言葉はNGワードです。");
 		return;
 	}
 
