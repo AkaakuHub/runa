@@ -36,7 +36,7 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		return;
 	}
 
-	const ngWords = ["ap", "免許", "離散数学"];
+	const ngWords = ["ap", "免許", "離散"];
 	const matchedNgWord = ngWords.find((word) => (message.content.includes(word) || message.content.includes(word.toUpperCase())));
 	if (matchedNgWord) {
 		await message.reply(`「${matchedNgWord}」はNGワードです。`);
