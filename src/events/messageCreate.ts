@@ -36,13 +36,6 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		return;
 	}
 
-	const ngWords = ["ap", "免許", "離散"];
-	const matchedNgWord = ngWords.find((word) => (message.content.includes(word) || message.content.includes(word.toUpperCase())));
-	if (matchedNgWord) {
-		await message.reply(`「${matchedNgWord}」はNGワードです。`);
-		return;
-	}
-
 	if (isValidYoutubeUrl(message.content)) {
 		// サーバー内のメッセージのみ処理
 		if (!message.guild) return;
