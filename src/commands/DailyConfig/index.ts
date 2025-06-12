@@ -1,4 +1,4 @@
-import { type ChatInputCommandInteraction, ChannelType, type TextChannel } from "discord.js";
+import { type ChatInputCommandInteraction, ChannelType } from "discord.js";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { dailyChannelService } from "../../services/DailyChannelService";
@@ -20,9 +20,9 @@ export const DailyConfigCommand: CommandDefinition = {
 			]
 		},
 		{
-			name: "channel",
-			description: "対象のチャンネル",
-			type: "CHANNEL",
+			name: "channel_id",
+			description: "チャンネルID（例: 1234567890123456789）",
+			type: "STRING",
 			required: false
 		}
 	],
@@ -37,13 +37,22 @@ export const DailyConfigCommand: CommandDefinition = {
 			}
 
 			const action = interaction.options.getString("action", true);
-			const channel = interaction.options.getChannel("channel");
+			const channelId = interaction.options.getString("channel_id");
 
 			switch (action) {
-				case "add":
+				case "add": {
+					if (!channelId) {
+						await interaction.reply({
+							content: "チャンネルIDを指定してください。",
+							ephemeral: true
+						});
+						return;
+					}
+
+					const channel = interaction.guild.channels.cache.get(channelId);
 					if (!channel || channel.type !== ChannelType.GuildText) {
 						await interaction.reply({
-							content: "テキストチャンネルを指定してください。",
+							content: "指定されたIDのテキストチャンネルが見つかりません。",
 							ephemeral: true
 						});
 						return;
@@ -51,12 +60,12 @@ export const DailyConfigCommand: CommandDefinition = {
 
 					const added = await dailyChannelService.addChannel(
 						interaction.guild.id,
-						channel.id
+						channelId
 					);
 
 					if (added) {
 						await interaction.reply({
-							content: `✅ ${channel.name} を日次サマリー対象チャンネルに追加しました。`,
+							content: `✅ ${channel.name} (${channelId}) を日次サマリー対象チャンネルに追加しました。`,
 							ephemeral: true
 						});
 					} else {
@@ -66,11 +75,12 @@ export const DailyConfigCommand: CommandDefinition = {
 						});
 					}
 					break;
+				}
 
-				case "remove":
-					if (!channel) {
+				case "remove": {
+					if (!channelId) {
 						await interaction.reply({
-							content: "削除するチャンネルを指定してください。",
+							content: "削除するチャンネルIDを指定してください。",
 							ephemeral: true
 						});
 						return;
@@ -78,23 +88,26 @@ export const DailyConfigCommand: CommandDefinition = {
 
 					const removed = await dailyChannelService.removeChannel(
 						interaction.guild.id,
-						channel.id
+						channelId
 					);
 
 					if (removed) {
+						const channel = interaction.guild.channels.cache.get(channelId);
+						const channelName = channel?.name || channelId;
 						await interaction.reply({
-							content: `✅ ${channel.name} を日次サマリー対象から削除しました。`,
+							content: `✅ ${channelName} を日次サマリー対象から削除しました。`,
 							ephemeral: true
 						});
 					} else {
 						await interaction.reply({
-							content: `⚠️ ${channel.name} は登録されていません。`,
+							content: `⚠️ 指定されたチャンネルは登録されていません。`,
 							ephemeral: true
 						});
 					}
 					break;
+				}
 
-				case "list":
+				case "list": {
 					const channelIds = dailyChannelService.getChannels(interaction.guild.id);
 					
 					if (channelIds.length === 0) {
@@ -108,7 +121,7 @@ export const DailyConfigCommand: CommandDefinition = {
 					const channelList = channelIds
 						.map(id => {
 							const ch = interaction.guild?.channels.cache.get(id);
-							return ch ? `• ${ch.name}` : `• (不明なチャンネル: ${id})`;
+							return ch ? `• ${ch.name} (${id})` : `• (不明なチャンネル: ${id})`;
 						})
 						.join("\n");
 
@@ -117,14 +130,16 @@ export const DailyConfigCommand: CommandDefinition = {
 						ephemeral: true
 					});
 					break;
+				}
 
-				case "clear":
+				case "clear": {
 					await dailyChannelService.clearChannels(interaction.guild.id);
 					await interaction.reply({
 						content: "✅ 全ての日次サマリー対象チャンネルを削除しました。",
 						ephemeral: true
 					});
 					break;
+				}
 
 				default:
 					await interaction.reply({
