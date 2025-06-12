@@ -22,19 +22,12 @@ export function setupDailySummaryScheduler(client: Client): void {
 
 					let targetChannel: TextChannel | null = null;
 
-					for (const channelId of configuredChannelIds) {
-						const channel = guild.channels.cache.get(channelId);
-						if (channel && channel.type === ChannelType.GuildText) {
-							targetChannel = channel as TextChannel;
-							break;
-						}
-					}
-
-					if (!targetChannel) {
-						const systemChannel = guild.systemChannel;
-						if (systemChannel && systemChannel.type === ChannelType.GuildText) {
-							targetChannel = systemChannel;
-						}
+					// 設定されたチャンネルの最初のものを投稿先として使用
+					const firstChannelId = configuredChannelIds[0];
+					const channel = guild.channels.cache.get(firstChannelId);
+					
+					if (channel && channel.type === ChannelType.GuildText) {
+						targetChannel = channel as TextChannel;
 					}
 
 					if (!targetChannel) {
