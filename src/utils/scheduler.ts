@@ -1,7 +1,8 @@
 import * as cron from "node-cron";
-import { type Client, ChannelType, type TextChannel } from "discord.js";
+import { type Client, ChannelType, type TextChannel, type ChatInputCommandInteraction } from "discord.js";
 import { generateDailySummary } from "../commands/DailySummary";
 import { logInfo, logError } from "./logger";
+import { dailyChannelService } from "../services/DailyChannelService";
 
 export function setupDailySummaryScheduler(client: Client): void {
 	cron.schedule('50 23 * * *', async () => {
@@ -10,28 +11,29 @@ export function setupDailySummaryScheduler(client: Client): void {
 			
 			const guilds = client.guilds.cache;
 			
-			for (const [guildId, guild] of guilds) {
+			for (const [, guild] of guilds) {
 				try {
-					const systemChannel = guild.systemChannel;
+					const configuredChannelIds = dailyChannelService.getChannels(guild.id);
+					
+					if (configuredChannelIds.length === 0) {
+						logInfo(`No daily summary channels configured for guild ${guild.name}`);
+						continue;
+					}
+
 					let targetChannel: TextChannel | null = null;
 
-					if (systemChannel && systemChannel.type === ChannelType.GuildText) {
-						targetChannel = systemChannel;
-					} else {
-						const textChannels = guild.channels.cache.filter(
-							channel => channel.type === ChannelType.GuildText
-						) as Map<string, TextChannel>;
-						
-						const generalChannel = textChannels.find(channel => 
-							channel.name.includes('general') || 
-							channel.name.includes('雑談') ||
-							channel.name.includes('全体')
-						);
-						
-						if (generalChannel) {
-							targetChannel = generalChannel;
-						} else if (textChannels.size > 0) {
-							targetChannel = textChannels.first() || null;
+					for (const channelId of configuredChannelIds) {
+						const channel = guild.channels.cache.get(channelId);
+						if (channel && channel.type === ChannelType.GuildText) {
+							targetChannel = channel as TextChannel;
+							break;
+						}
+					}
+
+					if (!targetChannel) {
+						const systemChannel = guild.systemChannel;
+						if (systemChannel && systemChannel.type === ChannelType.GuildText) {
+							targetChannel = systemChannel;
 						}
 					}
 
@@ -46,9 +48,14 @@ export function setupDailySummaryScheduler(client: Client): void {
 						user: { username: 'System', displayName: 'System' },
 						deferReply: async () => ({ fetchReply: true }),
 						editReply: async () => {},
-					} as any;
+					} as ChatInputCommandInteraction;
 
 					const summary = await generateDailySummary(mockInteraction);
+					
+					if (summary.includes("日次サマリー用のチャンネルが設定されていません")) {
+						logInfo(`Skipping guild ${guild.name} - no channels configured`);
+						continue;
+					}
 					
 					await targetChannel.send(summary);
 					

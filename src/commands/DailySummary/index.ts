@@ -2,6 +2,7 @@ import { type ChatInputCommandInteraction, ChannelType, type TextChannel } from 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
+import { dailyChannelService } from "../../services/DailyChannelService";
 
 export const DailySummaryCommand: CommandDefinition = {
 	name: "daily-summary",
@@ -44,9 +45,11 @@ export async function generateDailySummary(interaction: ChatInputCommandInteract
 		const tomorrow = new Date(today);
 		tomorrow.setDate(tomorrow.getDate() + 1);
 
-		const channels = guild.channels.cache.filter(
-			channel => channel.type === ChannelType.GuildText
-		) as Map<string, TextChannel>;
+		const configuredChannelIds = dailyChannelService.getChannels(guild.id);
+		
+		if (configuredChannelIds.length === 0) {
+			return "日次サマリー用のチャンネルが設定されていません。`/daily-config add` でチャンネルを追加してください。";
+		}
 
 		const todaysMessages: Array<{
 			channel: string;
@@ -55,17 +58,24 @@ export async function generateDailySummary(interaction: ChatInputCommandInteract
 			timestamp: Date;
 		}> = [];
 
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
-		for (const [_, channel] of channels) {
+		for (const channelId of configuredChannelIds) {
 			try {
-				const messages = await channel.messages.fetch({ limit: 100 });
+				const channel = guild.channels.cache.get(channelId);
+				
+				if (!channel || channel.type !== ChannelType.GuildText) {
+					logError(`Channel ${channelId} not found or not a text channel`);
+					continue;
+				}
+
+				const textChannel = channel as TextChannel;
+				const messages = await textChannel.messages.fetch({ limit: 100 });
 				
 				// eslint-disable-next-line @typescript-eslint/no-unused-vars
 				for (const [_, message] of messages) {
 					if (message.createdAt >= today && message.createdAt < tomorrow && !message.author.bot) {
 						if (message.content && message.content.length > 0) {
 							todaysMessages.push({
-								channel: channel.name,
+								channel: textChannel.name,
 								author: message.author.displayName || message.author.username,
 								content: message.content,
 								timestamp: message.createdAt,
@@ -74,7 +84,9 @@ export async function generateDailySummary(interaction: ChatInputCommandInteract
 					}
 				}
 			} catch (error) {
-				console.warn(`Could not fetch messages from channel ${channel.name}: ${error}`);
+				const channel = guild.channels.cache.get(channelId);
+				const channelName = channel?.name || channelId;
+				logError(`Could not fetch messages from channel ${channelName}: ${error}`);
 			}
 		}
 
@@ -90,7 +102,7 @@ export async function generateDailySummary(interaction: ChatInputCommandInteract
 		}
 
 		const genAI = new GoogleGenerativeAI(googleApiKey);
-		const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+		const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
 		const messagesText = todaysMessages
 			.map(msg => `[${msg.channel}] ${msg.author}: ${msg.content}`)
@@ -119,7 +131,7 @@ ${messagesText}
 - 日本語で出力`;
 
 		const result = await model.generateContent(prompt);
-		const response = await result.response;
+		const response = result.response;
 		const summary = response.text();
 
 		return summary;
