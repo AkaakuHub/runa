@@ -8,11 +8,13 @@ import { RegisterCommand } from "./Music/register";
 import { SkipCommand } from "./Music/skip";
 import { VolumeCommand } from "./Music/volume";
 import { PingCommand } from "./Ping";
+import { DailySummaryCommand } from "./DailySummary";
 
 // すべての公開するコマンドの一覧
 const commandsList: CommandDefinition[] = [
 	PingCommand,
 	DebianCommand,
+	DailySummaryCommand,
 	JoinCommand,
 	ByeCommand,
 	SkipCommand,

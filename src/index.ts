@@ -3,6 +3,7 @@ import * as dotenv from "dotenv";
 import { config } from "./config/config";
 import { setupEventListeners } from "./events";
 import { logInfo } from "./utils/logger";
+import { setupDailySummaryScheduler } from "./utils/scheduler";
 
 // 環境変数の読み込みを確実に行う
 dotenv.config();
@@ -23,6 +24,8 @@ client.once("ready", () => {
 	logInfo(
 		`環境変数: TOKEN=${config.token ? "設定済み" : "未設定"}, CLIENT_ID=${config.clientId ? "設定済み" : "未設定"}`,
 	);
+	
+	setupDailySummaryScheduler(client);
 });
 
 // イベントリスナーのセットアップ
