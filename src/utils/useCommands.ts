@@ -1,5 +1,5 @@
 import { SlashCommandBuilder } from "discord.js";
-import { CommandDefinition } from "../types";
+import type { CommandDefinition } from "../types";
 
 // コマンドのコレクション
 let commands: CommandDefinition[] = [];

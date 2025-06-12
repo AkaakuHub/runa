@@ -21,7 +21,9 @@ class DailyChannelService {
 			this.config = JSON.parse(data);
 			logInfo("Daily channel config loaded");
 		} catch {
-			logInfo("No existing daily channel config found, starting with empty config");
+			logInfo(
+				"No existing daily channel config found, starting with empty config",
+			);
 			this.config = {};
 		}
 	}
@@ -35,7 +37,10 @@ class DailyChannelService {
 		}
 	}
 
-	public async addChannel(guildId: string, channelId: string): Promise<boolean> {
+	public async addChannel(
+		guildId: string,
+		channelId: string,
+	): Promise<boolean> {
 		if (!this.config[guildId]) {
 			this.config[guildId] = [];
 		}
@@ -49,7 +54,10 @@ class DailyChannelService {
 		return true;
 	}
 
-	public async removeChannel(guildId: string, channelId: string): Promise<boolean> {
+	public async removeChannel(
+		guildId: string,
+		channelId: string,
+	): Promise<boolean> {
 		if (!this.config[guildId]) {
 			return false;
 		}

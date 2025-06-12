@@ -24,7 +24,7 @@ client.once("ready", () => {
 	logInfo(
 		`環境変数: TOKEN=${config.token ? "設定済み" : "未設定"}, CLIENT_ID=${config.clientId ? "設定済み" : "未設定"}`,
 	);
-	
+
 	setupDailySummaryScheduler(client);
 });
 

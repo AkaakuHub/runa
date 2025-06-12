@@ -1,5 +1,5 @@
-import { ChatInputCommandInteraction } from "discord.js";
-import { CommandDefinition } from "../../types";
+import type { ChatInputCommandInteraction } from "discord.js";
+import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 
 export const DebianCommand: CommandDefinition = {

@@ -78,41 +78,43 @@ export class MusicService {
 		return MusicService.instance;
 	}
 
-	 /**
-     * ボイスチャンネルにbotだけが残っているか確認し、残っている場合は自動退出する
-     */
-    public checkAndLeaveEmptyChannel(guildId: string): void {
-        const connection = getVoiceConnection(guildId);
-        if (!connection) return;
+	/**
+	 * ボイスチャンネルにbotだけが残っているか確認し、残っている場合は自動退出する
+	 */
+	public checkAndLeaveEmptyChannel(guildId: string): void {
+		const connection = getVoiceConnection(guildId);
+		if (!connection) return;
 
-        const channelId = connection.joinConfig.channelId;
-        const guild = this.currentTextChannel?.guild;
-        if (!guild || !channelId) return;
+		const channelId = connection.joinConfig.channelId;
+		const guild = this.currentTextChannel?.guild;
+		if (!guild || !channelId) return;
 
-        // ギルドからボイスチャンネルを取得
-        const voiceChannel = guild.channels.cache.get(channelId) as VoiceChannel;
-        if (!voiceChannel) return;
+		// ギルドからボイスチャンネルを取得
+		const voiceChannel = guild.channels.cache.get(channelId) as VoiceChannel;
+		if (!voiceChannel) return;
 
-        // チャンネルにいるメンバーを取得
-        const members = voiceChannel.members;
+		// チャンネルにいるメンバーを取得
+		const members = voiceChannel.members;
 
-        // メンバーがbotだけかどうかを確認
-        // （ボット自身以外のメンバーがいるかどうかをチェック）
-        const hasHumans = members.some(member => !member.user.bot);
+		// メンバーがbotだけかどうかを確認
+		// （ボット自身以外のメンバーがいるかどうかをチェック）
+		const hasHumans = members.some((member) => !member.user.bot);
 
-        if (!hasHumans) {
-            logInfo(`ボイスチャンネル「${voiceChannel.name}」にはボットだけが残っているため、自動退出します`);
-            this.leaveChannel(guildId);
-            
-            if (this.currentTextChannel) {
-                this.updateStatusMessage(
-                    "ボイスチャンネルに誰もいなくなったため、自動退出しました",
-                    0xffaa00,
-                    "自動退出"
-                );
-            }
-        }
-    }
+		if (!hasHumans) {
+			logInfo(
+				`ボイスチャンネル「${voiceChannel.name}」にはボットだけが残っているため、自動退出します`,
+			);
+			this.leaveChannel(guildId);
+
+			if (this.currentTextChannel) {
+				this.updateStatusMessage(
+					"ボイスチャンネルに誰もいなくなったため、自動退出しました",
+					0xffaa00,
+					"自動退出",
+				);
+			}
+		}
+	}
 
 	// ステータスメッセージを送信または更新するヘルパーメソッド
 	private async updateStatusMessage(

@@ -1,4 +1,8 @@
-import { type ChatInputCommandInteraction, ChannelType, type TextChannel } from "discord.js";
+import {
+	type ChatInputCommandInteraction,
+	ChannelType,
+	type TextChannel,
+} from "discord.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
@@ -15,14 +19,12 @@ export const DailySummaryCommand: CommandDefinition = {
 			});
 
 			const summary = await generateDailySummary(interaction);
-			
+
 			await interaction.editReply({
 				content: summary,
 			});
 
-			logInfo(
-				`Daily summary command executed by ${interaction.user.username}`,
-			);
+			logInfo(`Daily summary command executed by ${interaction.user.username}`);
 		} catch (error) {
 			logError(`Error executing daily summary command: ${error}`);
 			await interaction.editReply({
@@ -32,7 +34,10 @@ export const DailySummaryCommand: CommandDefinition = {
 	},
 };
 
-export async function generateDailySummary(interaction: ChatInputCommandInteraction): Promise<string> {
+export async function generateDailySummary(
+	interaction: ChatInputCommandInteraction,
+	targetChannelId?: string,
+): Promise<string> {
 	try {
 		const guild = interaction.guild;
 
@@ -45,10 +50,30 @@ export async function generateDailySummary(interaction: ChatInputCommandInteract
 		const tomorrow = new Date(today);
 		tomorrow.setDate(tomorrow.getDate() + 1);
 
-		const configuredChannelIds = dailyChannelService.getChannels(guild.id);
-		
-		if (configuredChannelIds.length === 0) {
-			return "日次サマリー用のチャンネルが設定されていません。`/daily-config add` でチャンネルを追加してください。";
+		let channelIds: string[];
+
+		if (targetChannelId) {
+			// 自動実行の場合：指定されたチャンネルIDのみ
+			channelIds = [targetChannelId];
+		} else {
+			// 手動実行の場合：実行されたチャンネルのみ
+			const currentChannelId = interaction.channel?.id;
+			if (!currentChannelId) {
+				return "チャンネル情報を取得できませんでした。";
+			}
+
+			const configuredChannelIds = dailyChannelService.getChannels(guild.id);
+
+			if (configuredChannelIds.length === 0) {
+				return "日次サマリー用のチャンネルが設定されていません。`/daily-config add` でチャンネルを追加してください。";
+			}
+
+			// 現在のチャンネルが設定されているかチェック
+			if (!configuredChannelIds.includes(currentChannelId)) {
+				return "このチャンネルは日次サマリー用に設定されていません。`/daily-config add` でチャンネルを追加してください。";
+			}
+
+			channelIds = [currentChannelId];
 		}
 
 		const todaysMessages: Array<{
@@ -58,10 +83,10 @@ export async function generateDailySummary(interaction: ChatInputCommandInteract
 			timestamp: Date;
 		}> = [];
 
-		for (const channelId of configuredChannelIds) {
+		for (const channelId of channelIds) {
 			try {
 				const channel = guild.channels.cache.get(channelId);
-				
+
 				if (!channel || channel.type !== ChannelType.GuildText) {
 					logError(`Channel ${channelId} not found or not a text channel`);
 					continue;
@@ -69,10 +94,14 @@ export async function generateDailySummary(interaction: ChatInputCommandInteract
 
 				const textChannel = channel as TextChannel;
 				const messages = await textChannel.messages.fetch({ limit: 100 });
-				
+
 				// eslint-disable-next-line @typescript-eslint/no-unused-vars
 				for (const [_, message] of messages) {
-					if (message.createdAt >= today && message.createdAt < tomorrow && !message.author.bot) {
+					if (
+						message.createdAt >= today &&
+						message.createdAt < tomorrow &&
+						!message.author.bot
+					) {
 						if (message.content && message.content.length > 0) {
 							todaysMessages.push({
 								channel: textChannel.name,
@@ -86,7 +115,9 @@ export async function generateDailySummary(interaction: ChatInputCommandInteract
 			} catch (error) {
 				const channel = guild.channels.cache.get(channelId);
 				const channelName = channel?.name || channelId;
-				logError(`Could not fetch messages from channel ${channelName}: ${error}`);
+				logError(
+					`Could not fetch messages from channel ${channelName}: ${error}`,
+				);
 			}
 		}
 
@@ -94,7 +125,9 @@ export async function generateDailySummary(interaction: ChatInputCommandInteract
 			return "今日はメッセージが見つかりませんでした。";
 		}
 
-		todaysMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+		todaysMessages.sort(
+			(a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+		);
 
 		const googleApiKey = process.env.GOOGLE_API_KEY;
 		if (!googleApiKey) {
@@ -105,8 +138,8 @@ export async function generateDailySummary(interaction: ChatInputCommandInteract
 		const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
 		const messagesText = todaysMessages
-			.map(msg => `[${msg.channel}] ${msg.author}: ${msg.content}`)
-			.join('\n');
+			.map((msg) => `[${msg.channel}] ${msg.author}: ${msg.content}`)
+			.join("\n");
 
 		const prompt = `以下は今日Discordサーバーで投稿されたメッセージです。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を3-5個のトピックとして整理してください。
 
@@ -135,7 +168,6 @@ ${messagesText}
 		const summary = response.text();
 
 		return summary;
-
 	} catch (error) {
 		logError(`Error generating daily summary: ${error}`);
 		throw error;

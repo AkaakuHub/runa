@@ -1,4 +1,4 @@
-import { Interaction } from "discord.js";
+import type { Interaction } from "discord.js";
 import { logError, logInfo } from "../utils/logger";
 import { getCommandByName } from "../utils/useCommands";
 import "../commands";
