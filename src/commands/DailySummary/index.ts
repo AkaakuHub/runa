@@ -4,11 +4,13 @@ import {
 	type TextChannel,
 	type Message,
 	type Collection,
+	AttachmentBuilder,
 } from "discord.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { dailyChannelService } from "../../services/DailyChannelService";
+import { NewspaperImageGenerator } from "../../utils/newspaperImageGenerator";
 
 export const DailySummaryCommand: CommandDefinition = {
 	name: "daily-summary",
@@ -35,8 +37,19 @@ export const DailySummaryCommand: CommandDefinition = {
 				highlight,
 			);
 
+			// 新聞風画像を生成
+			const imageGenerator = new NewspaperImageGenerator();
+			const imageBuffer = await imageGenerator.generateImage(summary);
+			
+			// 画像をDiscordに送信用の添付ファイルとして作成
+			const attachment = new AttachmentBuilder(imageBuffer, {
+				name: "daily-summary.png",
+				description: "今日のサーバーニュース",
+			});
+
 			await interaction.editReply({
-				content: summary,
+				content: "📰 **今日のサーバーニュース**",
+				files: [attachment],
 			});
 
 			logInfo(`Daily summary command executed by ${interaction.user.username}`);
