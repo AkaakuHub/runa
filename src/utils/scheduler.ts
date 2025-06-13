@@ -51,7 +51,7 @@ export function setupDailySummaryScheduler(client: Client): void {
 									channel: targetChannel,
 									user: { username: "System", displayName: "System" },
 									deferReply: async () => ({ fetchReply: true }),
-									editReply: async () => { },
+									editReply: async () => {},
 								} as unknown as ChatInputCommandInteraction;
 
 								const summary = await generateDailySummary(

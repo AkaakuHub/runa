@@ -29,7 +29,11 @@ export const DailySummaryCommand: CommandDefinition = {
 			});
 
 			const highlight = interaction.options.getString("highlight");
-			const summary = await generateDailySummary(interaction, undefined, highlight);
+			const summary = await generateDailySummary(
+				interaction,
+				undefined,
+				highlight,
+			);
 
 			await interaction.editReply({
 				content: summary,
@@ -105,29 +109,30 @@ export async function generateDailySummary(
 				}
 
 				const textChannel = channel as TextChannel;
-				
+
 				// その日の全メッセージを取得するため、ページネーションを使用
 				const allMessages: Message[] = [];
 				let lastMessageId: string | undefined;
 				let hasMoreMessages = true;
-				
+
 				while (hasMoreMessages) {
 					const options: { limit: number; before?: string } = { limit: 100 };
 					if (lastMessageId) {
 						options.before = lastMessageId;
 					}
-					
-					const messages: Collection<string, Message> = await textChannel.messages.fetch(options);
-					
+
+					const messages: Collection<string, Message> =
+						await textChannel.messages.fetch(options);
+
 					if (messages.size === 0) {
 						hasMoreMessages = false;
 						break;
 					}
-					
+
 					// メッセージを配列に追加し、日付チェック
 					const messagesArray = Array.from(messages.values());
 					let foundOldMessage = false;
-					
+
 					for (const message of messagesArray) {
 						if (message.createdAt < today) {
 							// 今日より古いメッセージが見つかったら、それ以降は取得しない
@@ -136,7 +141,7 @@ export async function generateDailySummary(
 						}
 						allMessages.push(message);
 					}
-					
+
 					if (foundOldMessage) {
 						hasMoreMessages = false;
 					} else {
@@ -146,7 +151,7 @@ export async function generateDailySummary(
 						}
 					}
 				}
-				
+
 				// 今日のメッセージのみをフィルタリング
 				for (const message of allMessages) {
 					if (
