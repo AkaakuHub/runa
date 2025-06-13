@@ -12,11 +12,11 @@ interface NewspaperConfig {
 }
 
 const DEFAULT_CONFIG: NewspaperConfig = {
-	width: 800,
-	height: 1200,
-	backgroundColor: "#f8f8f0",
-	headerColor: "#2c3e50",
-	textColor: "#2c3e50",
+	width: 1200,
+	height: 800,
+	backgroundColor: "#ffffff",
+	headerColor: "#000000",
+	textColor: "#000000",
 };
 
 export class NewspaperImageGenerator {
@@ -125,7 +125,6 @@ export class NewspaperImageGenerator {
 	}
 
 	private drawHeader(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {
-		const headerHeight = 80;
 		const currentDate = new Date().toLocaleDateString("ja-JP", {
 			year: "numeric",
 			month: "long",
@@ -133,146 +132,245 @@ export class NewspaperImageGenerator {
 			weekday: "long",
 		});
 
-		// ヘッダー背景
-		svg.append("rect")
-			.attr("x", 0)
-			.attr("y", 0)
-			.attr("width", this.config.width)
-			.attr("height", headerHeight)
-			.attr("fill", this.config.headerColor);
-
-		// 新聞タイトル
+		// 上部タイトル - 縦書き風に配置
 		svg.append("text")
-			.attr("x", this.config.width / 2)
+			.attr("x", this.config.width - 60)
 			.attr("y", 40)
 			.attr("text-anchor", "middle")
-			.attr("fill", "white")
+			.attr("fill", this.config.headerColor)
 			.attr("font-family", "serif")
-			.attr("font-size", "32px")
+			.attr("font-size", "36px")
 			.attr("font-weight", "bold")
-			.attr("letter-spacing", "2px")
+			.attr("writing-mode", "vertical-rl")
+			.attr("text-orientation", "upright")
 			.text("サーバー日報");
 
-		// 日付
+		// 日付（縦書き）
 		svg.append("text")
-			.attr("x", this.config.width / 2)
-			.attr("y", 65)
-			.attr("text-anchor", "middle")
-			.attr("fill", "white")
+			.attr("x", this.config.width - 120)
+			.attr("y", 40)
+			.attr("text-anchor", "start")
+			.attr("fill", this.config.headerColor)
 			.attr("font-family", "serif")
-			.attr("font-size", "14px")
-			.attr("opacity", 0.9)
+			.attr("font-size", "16px")
+			.attr("writing-mode", "vertical-rl")
+			.attr("text-orientation", "upright")
 			.text(currentDate);
 
-		// 区切り線
+		// 題号の下線
 		svg.append("line")
-			.attr("x1", 0)
-			.attr("y1", headerHeight)
-			.attr("x2", this.config.width)
-			.attr("y2", headerHeight)
+			.attr("x1", this.config.width - 40)
+			.attr("y1", 20)
+			.attr("x2", this.config.width - 40)
+			.attr("y2", 120)
+			.attr("stroke", this.config.headerColor)
+			.attr("stroke-width", 2);
+
+		// 外枠
+		svg.append("rect")
+			.attr("x", 10)
+			.attr("y", 10)
+			.attr("width", this.config.width - 20)
+			.attr("height", this.config.height - 20)
+			.attr("fill", "none")
 			.attr("stroke", this.config.headerColor)
 			.attr("stroke-width", 3);
 	}
 
 	private drawSections(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>, sections: Array<{ title: string; content: string }>): void {
-		let currentY = 120;
-		const padding = 40;
-		const maxWidth = this.config.width - (padding * 2);
-
-		for (const section of sections) {
-			// セクションタイトル
-			const titleLines = this.wrapText(section.title, maxWidth, 20);
-			for (const line of titleLines) {
+		const columnWidth = 180;
+		const columnHeight = this.config.height - 140;
+		const columnSpacing = 20;
+		const maxColumns = Math.floor((this.config.width - 200) / (columnWidth + columnSpacing));
+		
+		let currentColumn = 0;
+		let currentY = 50;
+		
+		for (let i = 0; i < sections.length; i++) {
+			const section = sections[i];
+			const startX = this.config.width - 180 - (currentColumn * (columnWidth + columnSpacing));
+			
+			// セクションタイトル（縦書き）
+			const titleChars = section.title.split('');
+			let titleY = currentY;
+			
+			for (const char of titleChars) {
 				svg.append("text")
-					.attr("x", padding)
-					.attr("y", currentY)
+					.attr("x", startX)
+					.attr("y", titleY)
 					.attr("fill", this.config.headerColor)
 					.attr("font-family", "serif")
-					.attr("font-size", "20px")
+					.attr("font-size", "18px")
 					.attr("font-weight", "bold")
-					.text(line);
-				currentY += 25;
+					.attr("text-anchor", "middle")
+					.text(char);
+				titleY += 20;
 			}
-
-			currentY += 10;
-
-			// セクションコンテンツ
-			const contentLines = this.wrapText(section.content, maxWidth, 16);
-			for (const line of contentLines) {
+			
+			currentY = titleY + 20;
+			
+			// セクションコンテンツ（縦書き）
+			const contentChars = section.content.split('');
+			let contentY = currentY;
+			let contentX = startX;
+			let charCount = 0;
+			const maxCharsPerColumn = Math.floor((columnHeight - currentY) / 18);
+			
+			for (const char of contentChars) {
+				if (charCount >= maxCharsPerColumn) {
+					// 次の行に移動
+					contentX -= 20;
+					contentY = currentY;
+					charCount = 0;
+					
+					// カラム境界チェック
+					if (contentX < startX - 60) {
+						currentColumn++;
+						if (currentColumn >= maxColumns) {
+							currentColumn = 0;
+							currentY = 50;
+						}
+						contentX = this.config.width - 180 - (currentColumn * (columnWidth + columnSpacing));
+						contentY = currentY;
+					}
+				}
+				
 				svg.append("text")
-					.attr("x", padding)
-					.attr("y", currentY)
+					.attr("x", contentX)
+					.attr("y", contentY)
 					.attr("fill", this.config.textColor)
 					.attr("font-family", "serif")
-					.attr("font-size", "16px")
-					.text(line);
-				currentY += 22;
+					.attr("font-size", "14px")
+					.attr("text-anchor", "middle")
+					.text(char);
+				
+				contentY += 18;
+				charCount++;
 			}
-
-			currentY += 20;
-
-			// セクション区切り線
-			svg.append("line")
-				.attr("x1", padding)
-				.attr("y1", currentY)
-				.attr("x2", this.config.width - padding)
-				.attr("y2", currentY)
-				.attr("stroke", "#d0d0d0")
-				.attr("stroke-width", 1);
-
-			currentY += 25;
-		}
-	}
-
-	private wrapText(text: string, maxWidth: number, fontSize: number): string[] {
-		const lines: string[] = [];
-		const chars = text.split("");
-		let currentLine = "";
-		const charWidth = fontSize * 0.6; // 大まかな文字幅
-
-		for (const char of chars) {
-			const testLine = currentLine + char;
-			const estimatedWidth = testLine.length * charWidth;
 			
-			if (estimatedWidth > maxWidth && currentLine !== "") {
-				lines.push(currentLine);
-				currentLine = char;
+			// 次のセクションの準備
+			currentColumn++;
+			if (currentColumn >= maxColumns) {
+				currentColumn = 0;
+				currentY = Math.max(contentY + 40, 50);
 			} else {
-				currentLine = testLine;
+				currentY = 50;
+			}
+			
+			// カラム間の区切り線
+			if (currentColumn > 0 || i < sections.length - 1) {
+				const lineX = this.config.width - 180 - (currentColumn * (columnWidth + columnSpacing)) + columnWidth/2;
+				svg.append("line")
+					.attr("x1", lineX)
+					.attr("y1", 30)
+					.attr("x2", lineX)
+					.attr("y2", this.config.height - 50)
+					.attr("stroke", "#cccccc")
+					.attr("stroke-width", 1);
 			}
 		}
-		
-		if (currentLine) {
-			lines.push(currentLine);
-		}
-
-		return lines;
 	}
+
 
 	private drawDecorations(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {
-		// 左右の装飾線
+		// 上部の装飾線（新聞らしい二重線）
 		svg.append("line")
-			.attr("x1", 20)
-			.attr("y1", 80)
-			.attr("x2", 20)
-			.attr("y2", this.config.height - 50)
-			.attr("stroke", "#e0e0e0")
+			.attr("x1", 30)
+			.attr("y1", 25)
+			.attr("x2", this.config.width - 200)
+			.attr("y2", 25)
+			.attr("stroke", this.config.headerColor)
 			.attr("stroke-width", 1);
-
+			
 		svg.append("line")
-			.attr("x1", this.config.width - 20)
-			.attr("y1", 80)
-			.attr("x2", this.config.width - 20)
-			.attr("y2", this.config.height - 50)
-			.attr("stroke", "#e0e0e0")
+			.attr("x1", 30)
+			.attr("y1", 28)
+			.attr("x2", this.config.width - 200)
+			.attr("y2", 28)
+			.attr("stroke", this.config.headerColor)
 			.attr("stroke-width", 1);
 
 		// 下部の装飾線
 		svg.append("line")
-			.attr("x1", 40)
-			.attr("y1", this.config.height - 30)
-			.attr("x2", this.config.width - 40)
-			.attr("y2", this.config.height - 30)
+			.attr("x1", 30)
+			.attr("y1", this.config.height - 25)
+			.attr("x2", this.config.width - 30)
+			.attr("y2", this.config.height - 25)
+			.attr("stroke", this.config.headerColor)
+			.attr("stroke-width", 1);
+			
+		svg.append("line")
+			.attr("x1", 30)
+			.attr("y1", this.config.height - 28)
+			.attr("x2", this.config.width - 30)
+			.attr("y2", this.config.height - 28)
+			.attr("stroke", this.config.headerColor)
+			.attr("stroke-width", 1);
+
+		// 角の装飾
+		const cornerSize = 15;
+		
+		// 左上角
+		svg.append("line")
+			.attr("x1", 20)
+			.attr("y1", 20)
+			.attr("x2", 20 + cornerSize)
+			.attr("y2", 20)
+			.attr("stroke", this.config.headerColor)
+			.attr("stroke-width", 2);
+		svg.append("line")
+			.attr("x1", 20)
+			.attr("y1", 20)
+			.attr("x2", 20)
+			.attr("y2", 20 + cornerSize)
+			.attr("stroke", this.config.headerColor)
+			.attr("stroke-width", 2);
+			
+		// 右上角
+		svg.append("line")
+			.attr("x1", this.config.width - 20)
+			.attr("y1", 20)
+			.attr("x2", this.config.width - 20 - cornerSize)
+			.attr("y2", 20)
+			.attr("stroke", this.config.headerColor)
+			.attr("stroke-width", 2);
+		svg.append("line")
+			.attr("x1", this.config.width - 20)
+			.attr("y1", 20)
+			.attr("x2", this.config.width - 20)
+			.attr("y2", 20 + cornerSize)
+			.attr("stroke", this.config.headerColor)
+			.attr("stroke-width", 2);
+			
+		// 左下角
+		svg.append("line")
+			.attr("x1", 20)
+			.attr("y1", this.config.height - 20)
+			.attr("x2", 20 + cornerSize)
+			.attr("y2", this.config.height - 20)
+			.attr("stroke", this.config.headerColor)
+			.attr("stroke-width", 2);
+		svg.append("line")
+			.attr("x1", 20)
+			.attr("y1", this.config.height - 20)
+			.attr("x2", 20)
+			.attr("y2", this.config.height - 20 - cornerSize)
+			.attr("stroke", this.config.headerColor)
+			.attr("stroke-width", 2);
+			
+		// 右下角
+		svg.append("line")
+			.attr("x1", this.config.width - 20)
+			.attr("y1", this.config.height - 20)
+			.attr("x2", this.config.width - 20 - cornerSize)
+			.attr("y2", this.config.height - 20)
+			.attr("stroke", this.config.headerColor)
+			.attr("stroke-width", 2);
+		svg.append("line")
+			.attr("x1", this.config.width - 20)
+			.attr("y1", this.config.height - 20)
+			.attr("x2", this.config.width - 20)
+			.attr("y2", this.config.height - 20 - cornerSize)
 			.attr("stroke", this.config.headerColor)
 			.attr("stroke-width", 2);
 	}
