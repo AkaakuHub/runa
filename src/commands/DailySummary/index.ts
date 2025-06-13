@@ -2,6 +2,8 @@ import {
 	type ChatInputCommandInteraction,
 	ChannelType,
 	type TextChannel,
+	type Message,
+	type Collection,
 } from "discord.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { CommandDefinition } from "../../types";
@@ -11,6 +13,14 @@ import { dailyChannelService } from "../../services/DailyChannelService";
 export const DailySummaryCommand: CommandDefinition = {
 	name: "daily-summary",
 	description: "今日のチャンネルの出来事をニュース風にまとめます。",
+	options: [
+		{
+			name: "highlight",
+			description: "特に注目してほしい出来事やキーワード（イチオシニュース）",
+			type: "STRING",
+			required: false,
+		},
+	],
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
 		try {
 			await interaction.deferReply({
@@ -18,7 +28,8 @@ export const DailySummaryCommand: CommandDefinition = {
 				fetchReply: true,
 			});
 
-			const summary = await generateDailySummary(interaction);
+			const highlight = interaction.options.getString("highlight");
+			const summary = await generateDailySummary(interaction, undefined, highlight);
 
 			await interaction.editReply({
 				content: summary,
@@ -37,6 +48,7 @@ export const DailySummaryCommand: CommandDefinition = {
 export async function generateDailySummary(
 	interaction: ChatInputCommandInteraction,
 	targetChannelId?: string,
+	highlight?: string | null,
 ): Promise<string> {
 	try {
 		const guild = interaction.guild;
@@ -93,10 +105,50 @@ export async function generateDailySummary(
 				}
 
 				const textChannel = channel as TextChannel;
-				const messages = await textChannel.messages.fetch({ limit: 100 });
-
-				// eslint-disable-next-line @typescript-eslint/no-unused-vars
-				for (const [_, message] of messages) {
+				
+				// その日の全メッセージを取得するため、ページネーションを使用
+				const allMessages: Message[] = [];
+				let lastMessageId: string | undefined;
+				let hasMoreMessages = true;
+				
+				while (hasMoreMessages) {
+					const options: { limit: number; before?: string } = { limit: 100 };
+					if (lastMessageId) {
+						options.before = lastMessageId;
+					}
+					
+					const messages: Collection<string, Message> = await textChannel.messages.fetch(options);
+					
+					if (messages.size === 0) {
+						hasMoreMessages = false;
+						break;
+					}
+					
+					// メッセージを配列に追加し、日付チェック
+					const messagesArray = Array.from(messages.values());
+					let foundOldMessage = false;
+					
+					for (const message of messagesArray) {
+						if (message.createdAt < today) {
+							// 今日より古いメッセージが見つかったら、それ以降は取得しない
+							foundOldMessage = true;
+							break;
+						}
+						allMessages.push(message);
+					}
+					
+					if (foundOldMessage) {
+						hasMoreMessages = false;
+					} else {
+						lastMessageId = messagesArray[messagesArray.length - 1]?.id;
+						if (messages.size < 100) {
+							hasMoreMessages = false;
+						}
+					}
+				}
+				
+				// 今日のメッセージのみをフィルタリング
+				for (const message of allMessages) {
 					if (
 						message.createdAt >= today &&
 						message.createdAt < tomorrow &&
@@ -141,7 +193,7 @@ export async function generateDailySummary(
 			.map((msg) => `[${msg.channel}] ${msg.author}: ${msg.content}`)
 			.join("\n");
 
-		const prompt = `以下は今日Discordサーバーで投稿されたメッセージです。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を3-5個のトピックとして整理してください。
+		let prompt = `以下は今日Discordサーバーで投稿されたメッセージです。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を3-5個のトピックとして整理してください。
 
 メッセージ:
 ${messagesText}
@@ -162,6 +214,13 @@ ${messagesText}
 - プライベートな情報は含めない
 - 建設的で興味深い内容を優先
 - 日本語で出力`;
+
+		if (highlight) {
+			prompt += `
+
+📌 **特に注目してほしい内容**: ${highlight}
+上記の内容について特に詳しく調べて、関連するメッセージがあれば優先的に取り上げて、イチオシニュースとして強調してください。`;
+		}
 
 		const result = await model.generateContent(prompt);
 		const response = result.response;
