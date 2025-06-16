@@ -1,375 +1,270 @@
 import * as d3 from "d3";
 import { JSDOM } from "jsdom";
 import { Buffer } from "node:buffer";
-import sharp from "sharp";
+import sharp from "sharp"; // SVGからPNGへの変換に必要
 
+// --- 設定 ---
 interface NewspaperConfig {
-	width: number;
-	height: number;
-	backgroundColor: string;
-	headerColor: string;
-	textColor: string;
+  width: number;
+  height: number;
+  backgroundColor: string;
+  textColor: string;
+  accentColor: string;
+  fontFamilyGothic: string;
+  fontFamilyMincho: string;
 }
 
 const DEFAULT_CONFIG: NewspaperConfig = {
-	width: 1200,
-	height: 1600,
-	backgroundColor: "#f8f8f8",
-	headerColor: "#000000",
-	textColor: "#333333",
+  width: 1200,
+  height: 1600, // 画像がないため高さを調整
+  backgroundColor: "#f4f2ef",
+  textColor: "#1a1a1a",
+  accentColor: "#000000",
+  fontFamilyGothic: "'Noto Sans JP', sans-serif",
+  fontFamilyMincho: "'Noto Serif JP', serif",
 };
 
+// --- テキスト解析結果の型定義 ---
+interface NewspaperContent {
+  mainTitle: string;
+  subTitle: string;
+  personName: string;
+  articles: Array<{ title: string; content: string }>;
+}
+
 export class NewspaperImageGenerator {
-	private config: NewspaperConfig;
+  private config: NewspaperConfig;
 
-	constructor(config: Partial<NewspaperConfig> = {}) {
-		this.config = { ...DEFAULT_CONFIG, ...config };
-	}
+  constructor(config: Partial<NewspaperConfig> = {}) {
+    this.config = { ...DEFAULT_CONFIG, ...config };
+  }
 
-	async generateImage(summaryText: string): Promise<Buffer> {
-		const sections = this.parseSummaryText(summaryText);
-		const svgString = this.generateSVG(sections);
+  /**
+   * マークダウン風テキストから新聞画像を生成します。
+   * @param summaryText 解析するテキストソース
+   * @returns 生成された画像のBuffer
+   */
+  async generateImage(summaryText: string): Promise<Buffer> {
+    const content = this.parseSummaryText(summaryText);
+    const svgString = this.generateSVG(content);
+    return await this.svgToPng(svgString);
+  }
 
-		// SVGをPNGに変換
-		return await this.svgToPng(svgString);
-	}
+  /**
+   * テキストを解析して各コンテンツに振り分ける
+   * @param text - 解析対象の文字列
+   * 書式ルール：
+   * # メインタイトル
+   * ## サブタイトル
+   * ### 故人名
+   * #### 記事1タイトル
+   * 記事1本文...
+   * #### 記事2タイトル
+   * 記事2本文...
+   */
+  private parseSummaryText(text: string): NewspaperContent {
+    const lines = text.split('\n').filter(line => line.trim() !== '');
+    const content: NewspaperContent = {
+      mainTitle: "（タイトルなし）",
+      subTitle: "",
+      personName: "",
+      articles: [],
+    };
+    let currentArticle: { title: string; content: string } | null = null;
 
-	private parseSummaryText(text: string): Array<{ title: string; content: string }> {
-		const sections: Array<{ title: string; content: string }> = [];
+    for (const line of lines) {
+      if (line.startsWith('#### ')) {
+        if (currentArticle) {
+          content.articles.push(currentArticle);
+        }
+        currentArticle = { title: line.substring(5).trim(), content: '' };
+      } else if (line.startsWith('# ')) {
+        content.mainTitle = line.substring(2).trim();
+      } else if (line.startsWith('## ')) {
+        content.subTitle = line.substring(3).trim();
+      } else if (line.startsWith('### ')) {
+        content.personName = line.substring(4).trim();
+      } else if (currentArticle) {
+        currentArticle.content += (currentArticle.content ? '\n' : '') + line;
+      }
+    }
+    if (currentArticle) {
+      content.articles.push(currentArticle);
+    }
+    return content;
+  }
 
-		console.log("Original text:", text); // デバッグ用
+  private generateSVG(content: NewspaperContent): string {
+    const dom = new JSDOM();
+    const document = dom.window.document;
 
-		// 📰 **今日のサーバーニュース** の部分を除去
-		const cleanText = text.replace(/📰\s*\*\*今日のサーバーニュース\*\*\s*\n*/g, "");
-		console.log("Clean text:", cleanText); // デバッグ用
+    const svg = d3.select(document.body)
+      .append("svg")
+      .attr("width", this.config.width)
+      .attr("height", this.config.height)
+      .attr("xmlns", "http://www.w3.org/2000/svg");
 
-		// 🔸 で始まる各セクションを抽出（改良版）
-		const sectionRegex = /🔸\s*\*\*(.*?)\*\*\s*\n(.*?)(?=🔸|📌|$)/gs;
-		const matches = Array.from(cleanText.matchAll(sectionRegex));
-		console.log("Regex matches:", matches.length); // デバッグ用
+    svg.append("defs")
+      .append("style")
+      .text(`
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700;900&family=Noto+Serif+JP:wght@400;700&display=swap');
+      `);
 
-		for (const match of matches) {
-			const title = match[1].trim();
-			const content = match[2].trim();
-			console.log("Found section:", { title, content }); // デバッグ用
-			sections.push({ title, content });
-		}
+    // 背景とレイアウト
+    svg.append("rect")
+      .attr("width", this.config.width)
+      .attr("height", this.config.height)
+      .attr("fill", this.config.backgroundColor);
+    
+    this.drawLayoutDecorations(svg);
+    this.drawTitleBlock(svg, "面影新聞");
+    this.drawMainFeature(svg, content);
+    this.drawArticles(svg, content.articles);
+    this.drawFooter(svg);
 
-		// マッチしない場合の代替パース方法
-		if (sections.length === 0) {
-			// 行ごとに分割して解析
-			const lines = cleanText.split('\n').filter(line => line.trim());
-			let currentTitle = "";
-			let currentContent = "";
+    return document.body.innerHTML;
+  }
 
-			for (const line of lines) {
-				if (line.includes('**') && (line.includes('🔸') || line.includes('**'))) {
-					// 前のセクションを保存
-					if (currentTitle && currentContent) {
-						sections.push({ title: currentTitle, content: currentContent.trim() });
-					}
-					// 新しいタイトルを設定
-					currentTitle = line.replace(/🔸\s*\*\*(.*?)\*\*.*/, '$1').trim();
-					currentContent = "";
-				} else if (line.trim() && currentTitle) {
-					// コンテンツを追加
-					currentContent += `${line.trim()} `;
-				}
-			}
+  private drawLayoutDecorations(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {
+    svg.append("path")
+      .attr("d", `M ${this.config.width - 600} 0 L ${this.config.width} 0 L ${this.config.width} 800 Z`)
+      .attr("fill", "rgba(0,0,0,0.05)");
 
-			// 最後のセクションを追加
-			if (currentTitle && currentContent) {
-				sections.push({ title: currentTitle, content: currentContent.trim() });
-			}
-		}
+    svg.append("path")
+      .attr("d", `M 0 ${this.config.height - 400} L 0 ${this.config.height} L 500 ${this.config.height} Z`)
+      .attr("fill", "rgba(0,0,0,0.05)");
+  }
+  
+  private drawTitleBlock(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>, newspaperTitle: string): void {
+    const titleGroup = svg.append("g")
+      .attr("transform", `translate(${this.config.width - 80}, 60)`);
 
-		// 📌 イチオシニュースがある場合は最初に配置
-		const highlightRegex = /📌\s*\*\*(.*?)\*\*[:\s]*(.*?)$/gs;
-		const highlightMatch = text.match(highlightRegex);
-		if (highlightMatch) {
-			const highlightText = highlightMatch[0].replace(/📌\s*\*\*.*?\*\*[:\s]*/, "");
-			sections.unshift({ title: "📌 イチオシニュース", content: highlightText });
-		}
+    titleGroup.append("rect")
+      .attr("x", -30)
+      .attr("y", 0)
+      .attr("width", 60)
+      .attr("height", 320)
+      .attr("fill", this.config.accentColor);
+    
+    titleGroup.append("text")
+      .attr("fill", "white")
+      .attr("font-family", this.config.fontFamilyMincho)
+      .attr("font-size", "48px")
+      .attr("font-weight", "bold")
+      .style("writing-mode", "vertical-rl")
+      .style("text-orientation", "upright")
+      .style("letter-spacing", "10px")
+      .attr("x", 0)
+      .attr("y", 20)
+      .text(newspaperTitle);
+    
+    const date = new Date();
+    const dateString = `${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`;
+    titleGroup.append("text")
+      .attr("fill", this.config.textColor)
+      .attr("font-family", this.config.fontFamilyGothic)
+      .attr("font-size", "14px")
+      .style("writing-mode", "vertical-rl")
+      .attr("x", 40)
+      .attr("y", 20)
+      .text(dateString);
+  }
 
-		console.log("Final sections:", sections); // デバッグ用
-		return sections;
-	}
+  private drawMainFeature(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>, content: NewspaperContent): void {
+    const mainGroup = svg.append("g").attr("transform", "translate(60, 180)");
+      
+    mainGroup.append("text")
+      .attr("x", 0)
+      .attr("y", 0)
+      .attr("fill", this.config.textColor)
+      .attr("font-family", this.config.fontFamilyGothic)
+      .attr("font-size", "100px")
+      .attr("font-weight", "900")
+      .selectAll("tspan")
+      .data(content.mainTitle.split(" "))
+      .enter()
+      .append("tspan")
+      .attr("x", 0)
+      .attr("dy", "1.1em")
+      .text(d => d);
+      
+    // サブタイトルと故人名を右側に配置
+    const rightSideGroup = svg.append("g")
+        .attr("transform", `translate(${this.config.width - 60}, 450)`);
 
-	private generateSVG(sections: Array<{ title: string; content: string }>): string {
-		const dom = new JSDOM();
-		const document = dom.window.document;
+    rightSideGroup.append("text")
+      .attr("text-anchor", "end")
+      .attr("fill", this.config.textColor)
+      .attr("font-family", this.config.fontFamilyMincho)
+      .attr("font-size", "40px")
+      .attr("font-weight", "bold")
+      .text(content.subTitle);
+      
+    rightSideGroup.append("text")
+      .attr("y", 80)
+      .attr("text-anchor", "end")
+      .attr("fill", this.config.textColor)
+      .attr("font-family", this.config.fontFamilyMincho)
+      .attr("font-size", "52px")
+      .attr("font-weight", "bold")
+      .text(content.personName);
+  }
 
-		// SVG要素を作成
-		const svg = d3.select(document.body)
-			.append("svg")
-			.attr("width", this.config.width)
-			.attr("height", this.config.height)
-			.attr("xmlns", "http://www.w3.org/2000/svg");
+  private drawArticles(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>, articles: Array<{ title: string; content: string }>): void {
+    const startX = 60;
+    const startY = 700; // Y座標を上に調整
+    const availableWidth = this.config.width - 120;
+    const numColumns = articles.length > 0 ? articles.length : 1;
+    const columnGap = 50;
+    const columnWidth = (availableWidth - (columnGap * (numColumns - 1))) / numColumns;
+    
+    articles.forEach((article, i) => {
+      const x = startX + i * (columnWidth + columnGap);
+      const g = svg.append("g").attr("transform", `translate(${x}, ${startY})`);
 
-		// 背景
-		svg.append("rect")
-			.attr("width", this.config.width)
-			.attr("height", this.config.height)
-			.attr("fill", this.config.backgroundColor);
+      g.append("text")
+        .attr("x", 0)
+        .attr("y", 0)
+        .attr("fill", this.config.textColor)
+        .attr("font-family", this.config.fontFamilyGothic)
+        .attr("font-size", "32px")
+        .attr("font-weight", "bold")
+        .text(`“${article.title}”`);
+      
+      g.append("line")
+        .attr("x1", 0).attr("y1", 25)
+        .attr("x2", 80).attr("y2", 25)
+        .attr("stroke", this.config.accentColor)
+        .attr("stroke-width", 3);
 
-		// ヘッダー部分
-		this.drawHeader(svg);
+      const foreignObject = g.append("foreignObject")
+        .attr("x", 0).attr("y", 50)
+        .attr("width", columnWidth)
+        .attr("height", this.config.height - startY - 150);
 
-		// セクション描画
-		this.drawSections(svg, sections);
+      foreignObject.append("xhtml:div")
+        .style("font-family", this.config.fontFamilyMincho)
+        .style("font-size", "16px")
+        .style("line-height", "1.9")
+        .style("color", this.config.textColor)
+        .style("white-space", "pre-wrap") // 改行を反映させる
+        .html(`<p>${article.content}</p>`);
+    });
+  }
 
-		// 装飾
-		this.drawDecorations(svg);
+  private drawFooter(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {
+    const footerGroup = svg.append("g")
+      .attr("transform", `translate(${this.config.width / 2}, ${this.config.height - 40})`);
 
-		return document.body.innerHTML;
-	}
+    footerGroup.append("text")
+      .attr("text-anchor", "middle")
+      .attr("font-family", this.config.fontFamilyGothic)
+      .attr("font-size", "12px")
+      .attr("fill", "#888")
+      .text("面影新聞社 編集部");
+  }
 
-	private drawHeader(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {
-		const currentDate = new Date();
-		const year = currentDate.getFullYear();
-		const month = currentDate.getMonth() + 1;
-		const day = currentDate.getDate();
-		const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
-		const weekday = weekdays[currentDate.getDay()];
-		const dateString = `${year}年${month}月${day}日`;
-
-		// 外枠
-		svg.append("rect")
-			.attr("x", 20)
-			.attr("y", 20)
-			.attr("width", this.config.width - 40)
-			.attr("height", this.config.height - 40)
-			.attr("fill", "none")
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 2);
-
-		// ヘッダー背景
-		svg.append("rect")
-			.attr("x", 20)
-			.attr("y", 20)
-			.attr("width", this.config.width - 40)
-			.attr("height", 120)
-			.attr("fill", "white")
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 1);
-
-		// メイン題字（横書き、中央配置）
-		svg.append("text")
-			.attr("x", this.config.width / 2)
-			.attr("y", 70)
-			.attr("text-anchor", "middle")
-			.attr("fill", this.config.headerColor)
-			.attr("font-family", "serif")
-			.attr("font-size", "42px")
-			.attr("font-weight", "bold")
-			.text("サーバー日報");
-
-		// 日付（右上）
-		svg.append("text")
-			.attr("x", this.config.width - 50)
-			.attr("y", 50)
-			.attr("text-anchor", "end")
-			.attr("fill", this.config.headerColor)
-			.attr("font-family", "serif")
-			.attr("font-size", "16px")
-			.text(dateString);
-
-		// 曜日
-		svg.append("text")
-			.attr("x", this.config.width - 50)
-			.attr("y", 70)
-			.attr("text-anchor", "end")
-			.attr("fill", this.config.headerColor)
-			.attr("font-family", "serif")
-			.attr("font-size", "14px")
-			.text(`(${weekday})`);
-
-		// 発行者情報（左上）
-		svg.append("text")
-			.attr("x", 50)
-			.attr("y", 50)
-			.attr("text-anchor", "start")
-			.attr("fill", this.config.headerColor)
-			.attr("font-family", "serif")
-			.attr("font-size", "12px")
-			.text("発行：システム管理室");
-
-		// 下部境界線
-		svg.append("line")
-			.attr("x1", 20)
-			.attr("y1", 140)
-			.attr("x2", this.config.width - 20)
-			.attr("y2", 140)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 2);
-	}
-
-	private drawSections(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>, sections: Array<{ title: string; content: string }>): void {
-		const marginLeft = 50;
-		const marginRight = 50;
-		const columnWidth = 250;
-		const columnSpacing = 30;
-		const availableWidth = this.config.width - marginLeft - marginRight;
-		const numColumns = Math.floor((availableWidth + columnSpacing) / (columnWidth + columnSpacing));
-		const startY = 170;
-
-		let currentColumn = 0;
-		let currentY = startY;
-
-		for (let i = 0; i < sections.length; i++) {
-			const section = sections[i];
-			const columnX = marginLeft + (currentColumn * (columnWidth + columnSpacing));
-
-			// セクションタイトル（横書き、見出し風）
-			const isHighlight = section.title.includes('📌');
-			const titleFontSize = isHighlight ? "24px" : "18px";
-			const titleWeight = isHighlight ? "bold" : "bold";
-
-			// タイトル背景（ハイライト記事の場合）
-			if (isHighlight) {
-				svg.append("rect")
-					.attr("x", columnX - 5)
-					.attr("y", currentY - 25)
-					.attr("width", columnWidth + 10)
-					.attr("height", 35)
-					.attr("fill", "#f0f0f0")
-					.attr("stroke", this.config.headerColor)
-					.attr("stroke-width", 1);
-			}
-
-			// セクションタイトル
-			const cleanTitle = section.title.replace(/[📌🔸]/gu, '').replace(/\*\*/g, '').trim();
-			const titleLines = this.wrapText(cleanTitle, columnWidth, Number.parseInt(titleFontSize.replace('px', '')));
-
-			for (let j = 0; j < titleLines.length; j++) {
-				svg.append("text")
-					.attr("x", columnX)
-					.attr("y", currentY + (j * 25))
-					.attr("fill", this.config.headerColor)
-					.attr("font-family", "serif")
-					.attr("font-size", titleFontSize)
-					.attr("font-weight", titleWeight)
-					.text(titleLines[j]);
-			}
-
-			currentY += (titleLines.length * 25) + 15;
-
-			// セクションコンテンツ（横書き、段落形式）
-			const contentLines = this.wrapText(section.content, columnWidth, 14);
-			const maxLinesPerColumn = Math.floor((this.config.height - currentY - 100) / 18);
-
-			let lineCount = 0;
-			for (const line of contentLines) {
-				if (lineCount >= maxLinesPerColumn && currentColumn < numColumns - 1) {
-					// 次のカラムに移動
-					currentColumn++;
-					currentY = startY;
-					lineCount = 0;
-					const newColumnX = marginLeft + (currentColumn * (columnWidth + columnSpacing));
-
-					svg.append("text")
-						.attr("x", newColumnX)
-						.attr("y", currentY + (lineCount * 18))
-						.attr("fill", this.config.textColor)
-						.attr("font-family", "serif")
-						.attr("font-size", "14px")
-						.text(line);
-				} else {
-					svg.append("text")
-						.attr("x", columnX)
-						.attr("y", currentY + (lineCount * 18))
-						.attr("fill", this.config.textColor)
-						.attr("font-family", "serif")
-						.attr("font-size", "14px")
-						.text(line);
-				}
-				lineCount++;
-			}
-
-			// 次のセクションの準備
-			currentY += (Math.min(contentLines.length, maxLinesPerColumn) * 18) + 30;
-
-			// カラムが満杯になったら次のカラムへ
-			if (currentY > this.config.height - 200) {
-				currentColumn++;
-				currentY = startY;
-				if (currentColumn >= numColumns) {
-					break; // これ以上表示できない
-				}
-			}
-
-			// カラム間の区切り線
-			if (currentColumn > 0 && currentColumn < numColumns) {
-				const lineX = marginLeft + (currentColumn * (columnWidth + columnSpacing)) - (columnSpacing / 2);
-				svg.append("line")
-					.attr("x1", lineX)
-					.attr("y1", 160)
-					.attr("x2", lineX)
-					.attr("y2", this.config.height - 80)
-					.attr("stroke", "#cccccc")
-					.attr("stroke-width", 1);
-			}
-		}
-	}
-
-
-	private drawDecorations(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {
-		// フッター情報
-		svg.append("text")
-			.attr("x", this.config.width / 2)
-			.attr("y", this.config.height - 30)
-			.attr("text-anchor", "middle")
-			.attr("fill", this.config.headerColor)
-			.attr("font-family", "serif")
-			.attr("font-size", "12px")
-			.text("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-		svg.append("text")
-			.attr("x", 50)
-			.attr("y", this.config.height - 50)
-			.attr("text-anchor", "start")
-			.attr("fill", this.config.headerColor)
-			.attr("font-family", "serif")
-			.attr("font-size", "10px")
-			.text("発行者：システム管理室 | 編集：自動生成システム");
-	}
-
-	private wrapText(text: string, maxWidth: number, fontSize: number): string[] {
-		const words = text.split(' ');
-		const lines: string[] = [];
-		let currentLine = '';
-
-		// 文字数の目安（フォントサイズに基づく）
-		const avgCharWidth = fontSize * 0.6;
-		const maxCharsPerLine = Math.floor(maxWidth / avgCharWidth);
-
-		for (const word of words) {
-			const testLine = currentLine + (currentLine ? ' ' : '') + word;
-
-			if (testLine.length <= maxCharsPerLine) {
-				currentLine = testLine;
-			} else {
-				if (currentLine) {
-					lines.push(currentLine);
-					currentLine = word;
-				} else {
-					// 単語が長すぎる場合は強制的に分割
-					lines.push(word);
-				}
-			}
-		}
-
-		if (currentLine) {
-			lines.push(currentLine);
-		}
-
-		return lines;
-	}
-
-	private async svgToPng(svgString: string): Promise<Buffer> {
-		// SVGをPNGに変換
-		return await sharp(Buffer.from(svgString))
-			.png()
-			.toBuffer();
-	}
+  private async svgToPng(svgString: string): Promise<Buffer> {
+    return await sharp(Buffer.from(svgString)).png().toBuffer();
+  }
 }
