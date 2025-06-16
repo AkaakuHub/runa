@@ -13,10 +13,10 @@ interface NewspaperConfig {
 
 const DEFAULT_CONFIG: NewspaperConfig = {
 	width: 1200,
-	height: 800,
-	backgroundColor: "#ffffff",
+	height: 1600,
+	backgroundColor: "#f8f8f8",
 	headerColor: "#000000",
-	textColor: "#000000",
+	textColor: "#333333",
 };
 
 export class NewspaperImageGenerator {
@@ -29,20 +29,20 @@ export class NewspaperImageGenerator {
 	async generateImage(summaryText: string): Promise<Buffer> {
 		const sections = this.parseSummaryText(summaryText);
 		const svgString = this.generateSVG(sections);
-		
+
 		// SVGをPNGに変換
 		return await this.svgToPng(svgString);
 	}
 
 	private parseSummaryText(text: string): Array<{ title: string; content: string }> {
 		const sections: Array<{ title: string; content: string }> = [];
-		
+
 		console.log("Original text:", text); // デバッグ用
-		
+
 		// 📰 **今日のサーバーニュース** の部分を除去
 		const cleanText = text.replace(/📰\s*\*\*今日のサーバーニュース\*\*\s*\n*/g, "");
 		console.log("Clean text:", cleanText); // デバッグ用
-		
+
 		// 🔸 で始まる各セクションを抽出（改良版）
 		const sectionRegex = /🔸\s*\*\*(.*?)\*\*\s*\n(.*?)(?=🔸|📌|$)/gs;
 		const matches = Array.from(cleanText.matchAll(sectionRegex));
@@ -61,7 +61,7 @@ export class NewspaperImageGenerator {
 			const lines = cleanText.split('\n').filter(line => line.trim());
 			let currentTitle = "";
 			let currentContent = "";
-			
+
 			for (const line of lines) {
 				if (line.includes('**') && (line.includes('🔸') || line.includes('**'))) {
 					// 前のセクションを保存
@@ -76,7 +76,7 @@ export class NewspaperImageGenerator {
 					currentContent += `${line.trim()} `;
 				}
 			}
-			
+
 			// 最後のセクションを追加
 			if (currentTitle && currentContent) {
 				sections.push({ title: currentTitle, content: currentContent.trim() });
@@ -98,7 +98,7 @@ export class NewspaperImageGenerator {
 	private generateSVG(sections: Array<{ title: string; content: string }>): string {
 		const dom = new JSDOM();
 		const document = dom.window.document;
-		
+
 		// SVG要素を作成
 		const svg = d3.select(document.body)
 			.append("svg")
@@ -125,146 +125,187 @@ export class NewspaperImageGenerator {
 	}
 
 	private drawHeader(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {
-		const currentDate = new Date().toLocaleDateString("ja-JP", {
-			year: "numeric",
-			month: "long",
-			day: "numeric",
-			weekday: "long",
-		});
-
-		// 上部タイトル - 縦書き風に配置
-		svg.append("text")
-			.attr("x", this.config.width - 60)
-			.attr("y", 40)
-			.attr("text-anchor", "middle")
-			.attr("fill", this.config.headerColor)
-			.attr("font-family", "serif")
-			.attr("font-size", "36px")
-			.attr("font-weight", "bold")
-			.attr("writing-mode", "vertical-rl")
-			.attr("text-orientation", "upright")
-			.text("サーバー日報");
-
-		// 日付（縦書き）
-		svg.append("text")
-			.attr("x", this.config.width - 120)
-			.attr("y", 40)
-			.attr("text-anchor", "start")
-			.attr("fill", this.config.headerColor)
-			.attr("font-family", "serif")
-			.attr("font-size", "16px")
-			.attr("writing-mode", "vertical-rl")
-			.attr("text-orientation", "upright")
-			.text(currentDate);
-
-		// 題号の下線
-		svg.append("line")
-			.attr("x1", this.config.width - 40)
-			.attr("y1", 20)
-			.attr("x2", this.config.width - 40)
-			.attr("y2", 120)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 2);
+		const currentDate = new Date();
+		const year = currentDate.getFullYear();
+		const month = currentDate.getMonth() + 1;
+		const day = currentDate.getDate();
+		const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+		const weekday = weekdays[currentDate.getDay()];
+		const dateString = `${year}年${month}月${day}日`;
 
 		// 外枠
 		svg.append("rect")
-			.attr("x", 10)
-			.attr("y", 10)
-			.attr("width", this.config.width - 20)
-			.attr("height", this.config.height - 20)
+			.attr("x", 20)
+			.attr("y", 20)
+			.attr("width", this.config.width - 40)
+			.attr("height", this.config.height - 40)
 			.attr("fill", "none")
 			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 3);
+			.attr("stroke-width", 2);
+
+		// ヘッダー背景
+		svg.append("rect")
+			.attr("x", 20)
+			.attr("y", 20)
+			.attr("width", this.config.width - 40)
+			.attr("height", 120)
+			.attr("fill", "white")
+			.attr("stroke", this.config.headerColor)
+			.attr("stroke-width", 1);
+
+		// メイン題字（横書き、中央配置）
+		svg.append("text")
+			.attr("x", this.config.width / 2)
+			.attr("y", 70)
+			.attr("text-anchor", "middle")
+			.attr("fill", this.config.headerColor)
+			.attr("font-family", "serif")
+			.attr("font-size", "42px")
+			.attr("font-weight", "bold")
+			.text("サーバー日報");
+
+		// 日付（右上）
+		svg.append("text")
+			.attr("x", this.config.width - 50)
+			.attr("y", 50)
+			.attr("text-anchor", "end")
+			.attr("fill", this.config.headerColor)
+			.attr("font-family", "serif")
+			.attr("font-size", "16px")
+			.text(dateString);
+
+		// 曜日
+		svg.append("text")
+			.attr("x", this.config.width - 50)
+			.attr("y", 70)
+			.attr("text-anchor", "end")
+			.attr("fill", this.config.headerColor)
+			.attr("font-family", "serif")
+			.attr("font-size", "14px")
+			.text(`(${weekday})`);
+
+		// 発行者情報（左上）
+		svg.append("text")
+			.attr("x", 50)
+			.attr("y", 50)
+			.attr("text-anchor", "start")
+			.attr("fill", this.config.headerColor)
+			.attr("font-family", "serif")
+			.attr("font-size", "12px")
+			.text("発行：システム管理室");
+
+		// 下部境界線
+		svg.append("line")
+			.attr("x1", 20)
+			.attr("y1", 140)
+			.attr("x2", this.config.width - 20)
+			.attr("y2", 140)
+			.attr("stroke", this.config.headerColor)
+			.attr("stroke-width", 2);
 	}
 
 	private drawSections(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>, sections: Array<{ title: string; content: string }>): void {
-		const columnWidth = 180;
-		const columnHeight = this.config.height - 140;
-		const columnSpacing = 20;
-		const maxColumns = Math.floor((this.config.width - 200) / (columnWidth + columnSpacing));
-		
+		const marginLeft = 50;
+		const marginRight = 50;
+		const columnWidth = 250;
+		const columnSpacing = 30;
+		const availableWidth = this.config.width - marginLeft - marginRight;
+		const numColumns = Math.floor((availableWidth + columnSpacing) / (columnWidth + columnSpacing));
+		const startY = 170;
+
 		let currentColumn = 0;
-		let currentY = 50;
-		
+		let currentY = startY;
+
 		for (let i = 0; i < sections.length; i++) {
 			const section = sections[i];
-			const startX = this.config.width - 180 - (currentColumn * (columnWidth + columnSpacing));
-			
-			// セクションタイトル（縦書き）
-			const titleChars = section.title.split('');
-			let titleY = currentY;
-			
-			for (const char of titleChars) {
+			const columnX = marginLeft + (currentColumn * (columnWidth + columnSpacing));
+
+			// セクションタイトル（横書き、見出し風）
+			const isHighlight = section.title.includes('📌');
+			const titleFontSize = isHighlight ? "24px" : "18px";
+			const titleWeight = isHighlight ? "bold" : "bold";
+
+			// タイトル背景（ハイライト記事の場合）
+			if (isHighlight) {
+				svg.append("rect")
+					.attr("x", columnX - 5)
+					.attr("y", currentY - 25)
+					.attr("width", columnWidth + 10)
+					.attr("height", 35)
+					.attr("fill", "#f0f0f0")
+					.attr("stroke", this.config.headerColor)
+					.attr("stroke-width", 1);
+			}
+
+			// セクションタイトル
+			const cleanTitle = section.title.replace(/[📌🔸]/gu, '').replace(/\*\*/g, '').trim();
+			const titleLines = this.wrapText(cleanTitle, columnWidth, Number.parseInt(titleFontSize.replace('px', '')));
+
+			for (let j = 0; j < titleLines.length; j++) {
 				svg.append("text")
-					.attr("x", startX)
-					.attr("y", titleY)
+					.attr("x", columnX)
+					.attr("y", currentY + (j * 25))
 					.attr("fill", this.config.headerColor)
 					.attr("font-family", "serif")
-					.attr("font-size", "18px")
-					.attr("font-weight", "bold")
-					.attr("text-anchor", "middle")
-					.text(char);
-				titleY += 20;
+					.attr("font-size", titleFontSize)
+					.attr("font-weight", titleWeight)
+					.text(titleLines[j]);
 			}
-			
-			currentY = titleY + 20;
-			
-			// セクションコンテンツ（縦書き）
-			const contentChars = section.content.split('');
-			let contentY = currentY;
-			let contentX = startX;
-			let charCount = 0;
-			const maxCharsPerColumn = Math.floor((columnHeight - currentY) / 18);
-			
-			for (const char of contentChars) {
-				if (charCount >= maxCharsPerColumn) {
-					// 次の行に移動
-					contentX -= 20;
-					contentY = currentY;
-					charCount = 0;
-					
-					// カラム境界チェック
-					if (contentX < startX - 60) {
-						currentColumn++;
-						if (currentColumn >= maxColumns) {
-							currentColumn = 0;
-							currentY = 50;
-						}
-						contentX = this.config.width - 180 - (currentColumn * (columnWidth + columnSpacing));
-						contentY = currentY;
-					}
+
+			currentY += (titleLines.length * 25) + 15;
+
+			// セクションコンテンツ（横書き、段落形式）
+			const contentLines = this.wrapText(section.content, columnWidth, 14);
+			const maxLinesPerColumn = Math.floor((this.config.height - currentY - 100) / 18);
+
+			let lineCount = 0;
+			for (const line of contentLines) {
+				if (lineCount >= maxLinesPerColumn && currentColumn < numColumns - 1) {
+					// 次のカラムに移動
+					currentColumn++;
+					currentY = startY;
+					lineCount = 0;
+					const newColumnX = marginLeft + (currentColumn * (columnWidth + columnSpacing));
+
+					svg.append("text")
+						.attr("x", newColumnX)
+						.attr("y", currentY + (lineCount * 18))
+						.attr("fill", this.config.textColor)
+						.attr("font-family", "serif")
+						.attr("font-size", "14px")
+						.text(line);
+				} else {
+					svg.append("text")
+						.attr("x", columnX)
+						.attr("y", currentY + (lineCount * 18))
+						.attr("fill", this.config.textColor)
+						.attr("font-family", "serif")
+						.attr("font-size", "14px")
+						.text(line);
 				}
-				
-				svg.append("text")
-					.attr("x", contentX)
-					.attr("y", contentY)
-					.attr("fill", this.config.textColor)
-					.attr("font-family", "serif")
-					.attr("font-size", "14px")
-					.attr("text-anchor", "middle")
-					.text(char);
-				
-				contentY += 18;
-				charCount++;
+				lineCount++;
 			}
-			
+
 			// 次のセクションの準備
-			currentColumn++;
-			if (currentColumn >= maxColumns) {
-				currentColumn = 0;
-				currentY = Math.max(contentY + 40, 50);
-			} else {
-				currentY = 50;
+			currentY += (Math.min(contentLines.length, maxLinesPerColumn) * 18) + 30;
+
+			// カラムが満杯になったら次のカラムへ
+			if (currentY > this.config.height - 200) {
+				currentColumn++;
+				currentY = startY;
+				if (currentColumn >= numColumns) {
+					break; // これ以上表示できない
+				}
 			}
-			
+
 			// カラム間の区切り線
-			if (currentColumn > 0 || i < sections.length - 1) {
-				const lineX = this.config.width - 180 - (currentColumn * (columnWidth + columnSpacing)) + columnWidth/2;
+			if (currentColumn > 0 && currentColumn < numColumns) {
+				const lineX = marginLeft + (currentColumn * (columnWidth + columnSpacing)) - (columnSpacing / 2);
 				svg.append("line")
 					.attr("x1", lineX)
-					.attr("y1", 30)
+					.attr("y1", 160)
 					.attr("x2", lineX)
-					.attr("y2", this.config.height - 50)
+					.attr("y2", this.config.height - 80)
 					.attr("stroke", "#cccccc")
 					.attr("stroke-width", 1);
 			}
@@ -273,106 +314,56 @@ export class NewspaperImageGenerator {
 
 
 	private drawDecorations(svg: d3.Selection<SVGSVGElement, unknown, null, undefined>): void {
-		// 上部の装飾線（新聞らしい二重線）
-		svg.append("line")
-			.attr("x1", 30)
-			.attr("y1", 25)
-			.attr("x2", this.config.width - 200)
-			.attr("y2", 25)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 1);
-			
-		svg.append("line")
-			.attr("x1", 30)
-			.attr("y1", 28)
-			.attr("x2", this.config.width - 200)
-			.attr("y2", 28)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 1);
+		// フッター情報
+		svg.append("text")
+			.attr("x", this.config.width / 2)
+			.attr("y", this.config.height - 30)
+			.attr("text-anchor", "middle")
+			.attr("fill", this.config.headerColor)
+			.attr("font-family", "serif")
+			.attr("font-size", "12px")
+			.text("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-		// 下部の装飾線
-		svg.append("line")
-			.attr("x1", 30)
-			.attr("y1", this.config.height - 25)
-			.attr("x2", this.config.width - 30)
-			.attr("y2", this.config.height - 25)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 1);
-			
-		svg.append("line")
-			.attr("x1", 30)
-			.attr("y1", this.config.height - 28)
-			.attr("x2", this.config.width - 30)
-			.attr("y2", this.config.height - 28)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 1);
+		svg.append("text")
+			.attr("x", 50)
+			.attr("y", this.config.height - 50)
+			.attr("text-anchor", "start")
+			.attr("fill", this.config.headerColor)
+			.attr("font-family", "serif")
+			.attr("font-size", "10px")
+			.text("発行者：システム管理室 | 編集：自動生成システム");
+	}
 
-		// 角の装飾
-		const cornerSize = 15;
-		
-		// 左上角
-		svg.append("line")
-			.attr("x1", 20)
-			.attr("y1", 20)
-			.attr("x2", 20 + cornerSize)
-			.attr("y2", 20)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 2);
-		svg.append("line")
-			.attr("x1", 20)
-			.attr("y1", 20)
-			.attr("x2", 20)
-			.attr("y2", 20 + cornerSize)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 2);
-			
-		// 右上角
-		svg.append("line")
-			.attr("x1", this.config.width - 20)
-			.attr("y1", 20)
-			.attr("x2", this.config.width - 20 - cornerSize)
-			.attr("y2", 20)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 2);
-		svg.append("line")
-			.attr("x1", this.config.width - 20)
-			.attr("y1", 20)
-			.attr("x2", this.config.width - 20)
-			.attr("y2", 20 + cornerSize)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 2);
-			
-		// 左下角
-		svg.append("line")
-			.attr("x1", 20)
-			.attr("y1", this.config.height - 20)
-			.attr("x2", 20 + cornerSize)
-			.attr("y2", this.config.height - 20)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 2);
-		svg.append("line")
-			.attr("x1", 20)
-			.attr("y1", this.config.height - 20)
-			.attr("x2", 20)
-			.attr("y2", this.config.height - 20 - cornerSize)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 2);
-			
-		// 右下角
-		svg.append("line")
-			.attr("x1", this.config.width - 20)
-			.attr("y1", this.config.height - 20)
-			.attr("x2", this.config.width - 20 - cornerSize)
-			.attr("y2", this.config.height - 20)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 2);
-		svg.append("line")
-			.attr("x1", this.config.width - 20)
-			.attr("y1", this.config.height - 20)
-			.attr("x2", this.config.width - 20)
-			.attr("y2", this.config.height - 20 - cornerSize)
-			.attr("stroke", this.config.headerColor)
-			.attr("stroke-width", 2);
+	private wrapText(text: string, maxWidth: number, fontSize: number): string[] {
+		const words = text.split(' ');
+		const lines: string[] = [];
+		let currentLine = '';
+
+		// 文字数の目安（フォントサイズに基づく）
+		const avgCharWidth = fontSize * 0.6;
+		const maxCharsPerLine = Math.floor(maxWidth / avgCharWidth);
+
+		for (const word of words) {
+			const testLine = currentLine + (currentLine ? ' ' : '') + word;
+
+			if (testLine.length <= maxCharsPerLine) {
+				currentLine = testLine;
+			} else {
+				if (currentLine) {
+					lines.push(currentLine);
+					currentLine = word;
+				} else {
+					// 単語が長すぎる場合は強制的に分割
+					lines.push(word);
+				}
+			}
+		}
+
+		if (currentLine) {
+			lines.push(currentLine);
+		}
+
+		return lines;
 	}
 
 	private async svgToPng(svgString: string): Promise<Buffer> {
