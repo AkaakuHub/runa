@@ -4,11 +4,13 @@ import {
 	type TextChannel,
 	type Message,
 	type Collection,
+	AttachmentBuilder,
 } from "discord.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { dailyChannelService } from "../../services/DailyChannelService";
+import { NewspaperImageGenerator } from "../../utils/newspaperImageGenerator";
 
 // Twitter/X URL検出とコンテンツ取得のヘルパー関数
 function extractTwitterUrls(content: string): string[] {
@@ -76,8 +78,19 @@ export const DailySummaryCommand: CommandDefinition = {
 				highlight,
 			);
 
+			// 新聞風画像を生成
+			const imageGenerator = new NewspaperImageGenerator();
+			const imageBuffer = await imageGenerator.generateImage(summary);
+			
+			// 画像をDiscordに送信用の添付ファイルとして作成
+			const attachment = new AttachmentBuilder(imageBuffer, {
+				name: "daily-summary.png",
+				description: "今日のサーバーニュース",
+			});
+
 			await interaction.editReply({
-				content: summary,
+				content: "📰 **今日のサーバーニュース**",
+				files: [attachment],
 			});
 
 			logInfo(`Daily summary command executed by ${interaction.user.username}`);
@@ -252,12 +265,16 @@ export async function generateDailySummary(
 			.map((msg) => `[${msg.channel}] ${msg.author}: ${msg.content}`)
 			.join("\n");
 
-		let prompt = `以下は今日Discordサーバーで投稿されたメッセージです。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を3-5個のトピックとして整理してください。
+		let prompt =
+`以下は今日投稿されたメッセージです。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を3-5個のトピックとして整理してください。
 
-メッセージ:
+メッセージ
+---
 ${messagesText}
+---
 
-以下の形式でまとめてください：
+以下の形式でまとめてください
+---
 📰 **今日のサーバーニュース**
 
 🔸 **トピック1のタイトル**
@@ -267,11 +284,13 @@ ${messagesText}
 要約内容
 
 （以下同様に続ける）
+---
 
 注意：
 - 各トピックは簡潔に1文で要約
 - 日本語で出力
 - 各文章は短めに記述して簡潔に要点だけをまとめる
+- 内容が類似しているメッセージはまとめて1つのトピックにする
 `;
 
 		if (highlight) {
