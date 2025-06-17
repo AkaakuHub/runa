@@ -12,6 +12,47 @@ import { logError, logInfo } from "../../utils/logger";
 import { dailyChannelService } from "../../services/DailyChannelService";
 import { NewspaperImageGenerator } from "../../utils/newspaperImageGenerator";
 
+// Twitter/X URL検出とコンテンツ取得のヘルパー関数
+function extractTwitterUrls(content: string): string[] {
+	const twitterUrlRegex =
+		/https?:\/\/(?:twitter\.com|x\.com|fxtwitter\.com|vxtwitter\.com)\/\w+\/status\/\d+/g;
+	return content.match(twitterUrlRegex) || [];
+}
+
+function convertToFxTwitterUrl(twitterUrl: string): string {
+	return twitterUrl.replace(
+		/https?:\/\/(?:twitter\.com|x\.com|fxtwitter\.com|vxtwitter\.com)/,
+		"https://api.fxtwitter.com",
+	);
+}
+
+async function fetchTweetContent(twitterUrl: string): Promise<string | null> {
+	try {
+		const fxTwitterUrl = convertToFxTwitterUrl(twitterUrl);
+		const response = await fetch(fxTwitterUrl);
+
+		if (!response.ok) {
+			logError(
+				`Failed to fetch tweet: ${response.status} ${response.statusText}`,
+			);
+			return null;
+		}
+
+		const data = await response.json();
+
+		if (data.code === 200 && data.tweet) {
+			const tweet = data.tweet;
+			const author = tweet.author;
+			return `【ツイート】@${author.screen_name}(${author.name}): ${tweet.text}`;
+		}
+
+		return null;
+	} catch (error) {
+		logError(`Error fetching tweet content: ${error}`);
+		return null;
+	}
+}
+
 export const DailySummaryCommand: CommandDefinition = {
 	name: "daily-summary",
 	description: "今日のチャンネルの出来事をニュース風にまとめます。",
@@ -173,10 +214,23 @@ export async function generateDailySummary(
 						!message.author.bot
 					) {
 						if (message.content && message.content.length > 0) {
+							let content = message.content;
+
+							// Twitter/X URLを検出してコンテンツを取得
+							const twitterUrls = extractTwitterUrls(content);
+							if (twitterUrls.length > 0) {
+								for (const url of twitterUrls) {
+									const tweetContent = await fetchTweetContent(url);
+									if (tweetContent) {
+										content += `\n${tweetContent}`;
+									}
+								}
+							}
+
 							todaysMessages.push({
 								channel: textChannel.name,
 								author: message.author.displayName || message.author.username,
-								content: message.content,
+								content: content,
 								timestamp: message.createdAt,
 							});
 						}
