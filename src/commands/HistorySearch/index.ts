@@ -85,11 +85,13 @@ async function performHistorySearch(
 		startDate.setDate(startDate.getDate() - daysBack);
 		startDate.setHours(0, 0, 0, 0);
 
-		// メッセージを取得
+		// メッセージを取得（進捗表示付き）
 		const messages = await fetchMessagesInDateRange(
 			textChannel,
 			startDate,
 			endDate,
+			interaction,
+			daysBack,
 		);
 
 		if (messages.length === 0) {
@@ -156,6 +158,8 @@ async function fetchMessagesInDateRange(
 	channel: TextChannel,
 	startDate: Date,
 	endDate: Date,
+	interaction: ChatInputCommandInteraction,
+	totalDays: number,
 ): Promise<
 	Array<{
 		author: string;
@@ -171,6 +175,13 @@ async function fetchMessagesInDateRange(
 
 	let lastMessageId: string | undefined;
 	let hasMoreMessages = true;
+	let currentDay = 0;
+	let lastProgressDate: string | null = null;
+
+	// 初期進捗表示
+	await interaction.editReply({
+		content: `🔍 履歴を検索中... (過去${totalDays}日間)\n📅 メッセージを取得中...`,
+	});
 
 	while (hasMoreMessages) {
 		const options: { limit: number; before?: string } = { limit: 100 };
@@ -194,6 +205,23 @@ async function fetchMessagesInDateRange(
 			if (message.createdAt < startDate) {
 				foundOldMessage = true;
 				break;
+			}
+
+			// 進捗表示の更新
+			const messageDate = message.createdAt.toLocaleDateString("ja-JP");
+			if (lastProgressDate !== messageDate) {
+				lastProgressDate = messageDate;
+				const daysAgo = Math.floor(
+					(endDate.getTime() - message.createdAt.getTime()) / (1000 * 60 * 60 * 24),
+				);
+				
+				// 進捗表示を更新（あまり頻繁にならないよう調整）
+				if (daysAgo !== currentDay) {
+					currentDay = daysAgo;
+					await interaction.editReply({
+						content: `🔍 履歴を検索中... (過去${totalDays}日間)\n📅 ${messageDate} (${daysAgo}日前) を確認中... (${messages.length}件取得済み)`,
+					});
+				}
 			}
 
 			// 範囲内のメッセージのみを追加
@@ -221,6 +249,11 @@ async function fetchMessagesInDateRange(
 			}
 		}
 	}
+
+	// 最終進捗表示
+	await interaction.editReply({
+		content: `🔍 履歴検索完了！\n📊 ${messages.length}件のメッセージを取得しました\n🤖 AIで検索中...`,
+	});
 
 	// 時系列順にソート
 	messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
