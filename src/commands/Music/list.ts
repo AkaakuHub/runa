@@ -1,4 +1,5 @@
 import type { ChatInputCommandInteraction } from "discord.js";
+import { EmbedBuilder } from "discord.js";
 import type { CommandDefinition } from "../../types";
 import { MusicService } from "../../services/MusicService";
 import { logError, logInfo } from "../../utils/logger";
