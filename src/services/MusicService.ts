@@ -7,6 +7,7 @@ import {
 	createAudioResource,
 	getVoiceConnection,
 	joinVoiceChannel,
+	NoSubscriberBehavior,
 } from "@discordjs/voice";
 import {
 	EmbedBuilder,
@@ -35,7 +36,7 @@ export class MusicService {
 	private constructor() {
 		this.player = createAudioPlayer({
 			behaviors: {
-				noSubscriber: "play", // サブスクライバーがいなくても再生
+				noSubscriber: NoSubscriberBehavior.Play, // サブスクライバーがいなくても再生
 				maxMissedFrames: 50, // 失敗フレーム許容値を増やす
 			},
 		});

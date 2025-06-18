@@ -10,6 +10,7 @@ import { VolumeCommand } from "./Music/volume";
 import { PingCommand } from "./Ping";
 import { DailySummaryCommand } from "./DailySummary";
 import { DailyConfigCommand } from "./DailyConfig";
+import { HistorySearchCommand } from "./HistorySearch";
 
 // すべての公開するコマンドの一覧
 const commandsList: CommandDefinition[] = [
@@ -17,6 +18,7 @@ const commandsList: CommandDefinition[] = [
 	DebianCommand,
 	DailySummaryCommand,
 	DailyConfigCommand,
+	HistorySearchCommand,
 	JoinCommand,
 	ByeCommand,
 	SkipCommand,
