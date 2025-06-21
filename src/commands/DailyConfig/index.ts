@@ -17,6 +17,8 @@ export const DailyConfigCommand: CommandDefinition = {
 				{ name: "削除", value: "remove" },
 				{ name: "一覧", value: "list" },
 				{ name: "クリア", value: "clear" },
+				{ name: "投稿チャンネル設定", value: "set-summary" },
+				{ name: "投稿チャンネル削除", value: "clear-summary" },
 			],
 		},
 		{
@@ -111,26 +113,38 @@ export const DailyConfigCommand: CommandDefinition = {
 					const channelIds = dailyChannelService.getChannels(
 						interaction.guild.id,
 					);
+					const summaryChannelId = dailyChannelService.getSummaryChannel(
+						interaction.guild.id,
+					);
 
-					if (channelIds.length === 0) {
-						await interaction.reply({
-							content: "📝 日次サマリー対象チャンネルは設定されていません。",
-							ephemeral: true,
-						});
-						return;
+					let content = "📝 **日次サマリー設定一覧:**\n\n";
+
+					// 投稿用チャンネル
+					if (summaryChannelId) {
+						const summaryChannel = interaction.guild.channels.cache.get(summaryChannelId);
+						const summaryChannelName = summaryChannel?.name || "不明なチャンネル";
+						content += `📢 **投稿チャンネル:** ${summaryChannelName} (${summaryChannelId})\n\n`;
+					} else {
+						content += "📢 **投稿チャンネル:** 未設定\n\n";
 					}
 
-					const channelList = channelIds
-						.map((id) => {
-							const ch = interaction.guild?.channels.cache.get(id);
-							return ch
-								? `• ${ch.name} (${id})`
-								: `• (不明なチャンネル: ${id})`;
-						})
-						.join("\n");
+					// 対象チャンネル
+					if (channelIds.length === 0) {
+						content += "📋 **対象チャンネル:** 未設定";
+					} else {
+						const channelList = channelIds
+							.map((id) => {
+								const ch = interaction.guild?.channels.cache.get(id);
+								return ch
+									? `• ${ch.name} (${id})`
+									: `• (不明なチャンネル: ${id})`;
+							})
+							.join("\n");
+						content += `📋 **対象チャンネル:**\n${channelList}`;
+					}
 
 					await interaction.reply({
-						content: `📝 **日次サマリー対象チャンネル一覧:**\n${channelList}`,
+						content,
 						ephemeral: true,
 					});
 					break;
@@ -140,6 +154,45 @@ export const DailyConfigCommand: CommandDefinition = {
 					await dailyChannelService.clearChannels(interaction.guild.id);
 					await interaction.reply({
 						content: "✅ 全ての日次サマリー対象チャンネルを削除しました。",
+						ephemeral: true,
+					});
+					break;
+				}
+
+				case "set-summary": {
+					if (!channelId) {
+						await interaction.reply({
+							content: "投稿用チャンネルIDを指定してください。",
+							ephemeral: true,
+						});
+						return;
+					}
+
+					const channel = interaction.guild.channels.cache.get(channelId);
+					if (!channel || channel.type !== ChannelType.GuildText) {
+						await interaction.reply({
+							content: "指定されたIDのテキストチャンネルが見つかりません。",
+							ephemeral: true,
+						});
+						return;
+					}
+
+					await dailyChannelService.setSummaryChannel(
+						interaction.guild.id,
+						channelId,
+					);
+
+					await interaction.reply({
+						content: `✅ ${channel.name} (${channelId}) を日次サマリー投稿チャンネルに設定しました。`,
+						ephemeral: true,
+					});
+					break;
+				}
+
+				case "clear-summary": {
+					await dailyChannelService.clearSummaryChannel(interaction.guild.id);
+					await interaction.reply({
+						content: "✅ 日次サマリー投稿チャンネルの設定を削除しました。",
 						ephemeral: true,
 					});
 					break;

@@ -20,9 +20,15 @@ export function setupDailySummaryScheduler(client: Client): void {
 
 				for (const [, guild] of guilds) {
 					try {
-						const configuredChannelIds = dailyChannelService.getChannels(
-							guild.id,
-						);
+						const summaryChannelId = dailyChannelService.getSummaryChannel(guild.id);
+						const configuredChannelIds = dailyChannelService.getChannels(guild.id);
+
+						if (!summaryChannelId) {
+							logInfo(
+								`No summary channel configured for guild ${guild.name}`,
+							);
+							continue;
+						}
 
 						if (configuredChannelIds.length === 0) {
 							logInfo(
@@ -31,57 +37,59 @@ export function setupDailySummaryScheduler(client: Client): void {
 							continue;
 						}
 
-						// 各設定されたチャンネルに対して個別にサマリーを生成・投稿
-						for (const channelId of configuredChannelIds) {
-							try {
-								const channel = guild.channels.cache.get(channelId);
-
-								if (!channel || channel.type !== ChannelType.GuildText) {
-									logError(
-										`Channel ${channelId} not found or not a text channel in guild ${guild.name}`,
-									);
-									continue;
-								}
-
-								const targetChannel = channel as TextChannel;
-
-								const mockInteraction = {
-									client: client,
-									guild: guild,
-									channel: targetChannel,
-									user: { username: "System", displayName: "System" },
-									deferReply: async () => ({ fetchReply: true }),
-									editReply: async () => {},
-								} as unknown as ChatInputCommandInteraction;
-
-								const summary = await generateDailySummary(
-									mockInteraction,
-									channelId,
-								);
-
-								if (
-									summary.includes(
-										"日次サマリー用のチャンネルが設定されていません",
-									) ||
-									summary.includes("今日はメッセージが見つかりませんでした")
-								) {
-									logInfo(
-										`Skipping channel ${targetChannel.name} in guild ${guild.name} - no content`,
-									);
-									continue;
-								}
-
-								await targetChannel.send(summary);
-
-								logInfo(
-									`Daily summary sent to ${guild.name}#${targetChannel.name}`,
-								);
-							} catch (error) {
-								logError(
-									`Error sending daily summary to channel ${channelId} in guild ${guild.name}: ${error}`,
-								);
-							}
+						const summaryChannel = guild.channels.cache.get(summaryChannelId);
+						if (!summaryChannel || summaryChannel.type !== ChannelType.GuildText) {
+							logError(
+								`Summary channel ${summaryChannelId} not found or not a text channel in guild ${guild.name}`,
+							);
+							continue;
 						}
+
+						const targetChannel = summaryChannel as TextChannel;
+
+						const mockInteraction = {
+							client: client,
+							guild: guild,
+							channel: targetChannel,
+							user: { username: "System", displayName: "System" },
+							deferReply: async () => ({ fetchReply: true }),
+							editReply: async () => { },
+						} as unknown as ChatInputCommandInteraction;
+
+						// 全ての対象チャンネルからメッセージを収集してサマリーを生成
+						const summary = await generateDailySummary(
+							mockInteraction,
+							configuredChannelIds,
+						);
+
+						if (
+							summary.includes(
+								"日次サマリー用のチャンネルが設定されていません",
+							) ||
+							summary.includes("今日はメッセージが見つかりませんでした")
+						) {
+							logInfo(
+								`Skipping guild ${guild.name} - no content`,
+							);
+							continue;
+						}
+
+						// 日付を追加してサマリーを投稿
+						const today = new Date();
+						const dateString = today.toLocaleDateString('ja-JP', {
+							year: 'numeric',
+							month: 'long',
+							day: 'numeric',
+							weekday: 'long'
+						});
+
+						const summaryWithDate = `# ${dateString}のサーバーニュース\n\n${summary}`;
+
+						await targetChannel.send(summaryWithDate);
+
+						logInfo(
+							`Daily summary sent to ${guild.name}#${targetChannel.name}`,
+						);
 					} catch (error) {
 						logError(
 							`Error processing daily summary for guild ${guild.name}: ${error}`,

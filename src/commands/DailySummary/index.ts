@@ -70,15 +70,51 @@ export const DailySummaryCommand: CommandDefinition = {
 			});
 
 			const highlight = interaction.options.getString("highlight");
+
+			if (!interaction.guild) {
+				await interaction.editReply({
+					content: "このコマンドはサーバー内でのみ使用できます。",
+				});
+				return;
+			}
+
+			const summaryChannelId = dailyChannelService.getSummaryChannel(interaction.guild.id);
 			const summary = await generateDailySummary(
 				interaction,
 				undefined,
 				highlight,
 			);
 
-			await interaction.editReply({
-				content: summary,
-			});
+			// 投稿用チャンネルが設定されている場合はそこに投稿
+			if (summaryChannelId) {
+				const summaryChannel = interaction.guild.channels.cache.get(summaryChannelId);
+				if (summaryChannel && summaryChannel.type === ChannelType.GuildText) {
+					const today = new Date();
+					const dateString = today.toLocaleDateString('ja-JP', {
+						year: 'numeric',
+						month: 'long',
+						day: 'numeric',
+						weekday: 'long'
+					});
+
+					const summaryWithDate = `# ${dateString}のサーバーニュース\n\n${summary}`;
+
+					await (summaryChannel as TextChannel).send(summaryWithDate);
+
+					await interaction.editReply({
+						content: `✅ 日次サマリーを ${summaryChannel.name} に投稿しました。`,
+					});
+				} else {
+					await interaction.editReply({
+						content: "投稿用チャンネルが見つかりません。設定を確認してください。",
+					});
+				}
+			} else {
+				// 従来通りの動作（実行されたチャンネルに返信）
+				await interaction.editReply({
+					content: summary,
+				});
+			}
 
 			logInfo(`Daily summary command executed by ${interaction.user.username}`);
 		} catch (error) {
@@ -92,7 +128,7 @@ export const DailySummaryCommand: CommandDefinition = {
 
 export async function generateDailySummary(
 	interaction: ChatInputCommandInteraction,
-	targetChannelId?: string,
+	targetChannelIds?: string | string[],
 	highlight?: string | null,
 ): Promise<string> {
 	try {
@@ -109,28 +145,18 @@ export async function generateDailySummary(
 
 		let channelIds: string[];
 
-		if (targetChannelId) {
-			// 自動実行の場合：指定されたチャンネルIDのみ
-			channelIds = [targetChannelId];
+		if (targetChannelIds) {
+			// 自動実行の場合：指定されたチャンネルIDsを使用
+			channelIds = Array.isArray(targetChannelIds) ? targetChannelIds : [targetChannelIds];
 		} else {
-			// 手動実行の場合：実行されたチャンネルのみ
-			const currentChannelId = interaction.channel?.id;
-			if (!currentChannelId) {
-				return "チャンネル情報を取得できませんでした。";
-			}
-
+			// 手動実行の場合：設定されたすべてのチャンネルからメッセージを収集
 			const configuredChannelIds = dailyChannelService.getChannels(guild.id);
 
 			if (configuredChannelIds.length === 0) {
 				return "日次サマリー用のチャンネルが設定されていません。`/daily-config add` でチャンネルを追加してください。";
 			}
 
-			// 現在のチャンネルが設定されているかチェック
-			if (!configuredChannelIds.includes(currentChannelId)) {
-				return "このチャンネルは日次サマリー用に設定されていません。`/daily-config add` でチャンネルを追加してください。";
-			}
-
-			channelIds = [currentChannelId];
+			channelIds = configuredChannelIds;
 		}
 
 		const todaysMessages: Array<{
@@ -253,7 +279,7 @@ export async function generateDailySummary(
 			.join("\n");
 
 		let prompt =
-`以下は今日投稿されたメッセージです。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を3-5個のトピックとして整理してください。
+			`以下は今日投稿されたメッセージです。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を3-5個のトピックとして整理してください。
 なお、サーバでのユーザーメッセージについて注目し、twitterやXの投稿に関しては背景情報として使用してください。
 
 メッセージ:
