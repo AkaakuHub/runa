@@ -140,6 +140,8 @@ export const DailySummaryCommand: CommandDefinition = {
 		},
 	],
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
+		const startTime = Date.now();
+		
 		try {
 			await interaction.deferReply();
 
@@ -158,16 +160,35 @@ export const DailySummaryCommand: CommandDefinition = {
 			// サマリー生成が時間がかかる場合があるのでタイムアウト対策
 			let summary: string;
 			try {
-				summary = await generateDailySummary(
-					interaction,
-					undefined,
-					highlight,
-					dateString,
-				);
-			} catch  {
-				await interaction.editReply({
-					content: "サマリーの生成中にエラーが発生しました。時間をおいて再度お試しください。",
+				// 14分でタイムアウト（Discord の15分制限より少し短く）
+				const timeoutPromise = new Promise<never>((_, reject) => {
+					setTimeout(() => reject(new Error('Generation timeout')), 14 * 60 * 1000);
 				});
+				
+				summary = await Promise.race([
+					generateDailySummary(
+						interaction,
+						undefined,
+						highlight,
+						dateString,
+					),
+					timeoutPromise
+				]);
+			} catch (error) {
+				const elapsed = Date.now() - startTime;
+				logError(`Summary generation failed after ${elapsed}ms: ${error}`);
+				
+				if (!interaction.replied && !interaction.deferred) {
+					return; // インタラクションが既に無効
+				}
+				
+				try {
+					await interaction.editReply({
+						content: "サマリーの生成中にエラーが発生しました。時間をおいて再度お試しください。",
+					});
+				} catch (replyError) {
+					logError(`Failed to send error message: ${replyError}`);
+				}
 				return;
 			}
 
@@ -175,15 +196,28 @@ export const DailySummaryCommand: CommandDefinition = {
 			if (summaryChannelId) {
 				const summaryChannel = interaction.guild.channels.cache.get(summaryChannelId);
 				if (summaryChannel && summaryChannel.type === ChannelType.GuildText) {
-					const today = new Date();
-					const dateString = today.toLocaleDateString('ja-JP', {
+					let targetDateForDisplay: Date;
+					
+					if (dateString) {
+						// 指定された日付を使用（JST）
+						const [year, month, day] = dateString.split('-').map(Number);
+						targetDateForDisplay = new Date(year, month - 1, day);
+					} else {
+						// 現在のJST日付を使用
+						const now = new Date();
+						const jstOffset = 9 * 60 * 60 * 1000;
+						const jstNow = new Date(now.getTime() + jstOffset);
+						targetDateForDisplay = new Date(jstNow.getFullYear(), jstNow.getMonth(), jstNow.getDate());
+					}
+					
+					const displayDateString = targetDateForDisplay.toLocaleDateString('ja-JP', {
 						year: 'numeric',
 						month: 'long',
 						day: 'numeric',
 						weekday: 'long'
 					});
 
-					const summaryWithDate = `# ${dateString}のサーバーニュース\n\n${summary}`;
+					const summaryWithDate = `# ${displayDateString}のサーバーニュース\n\n${summary}`;
 
 					// メッセージが2000文字を超える場合は分割送信
 					if (summaryWithDate.length <= 2000) {
@@ -251,34 +285,35 @@ export async function generateDailySummary(
 			throw new Error("Guild not found");
 		}
 
-		let today: Date;
-		let tomorrow: Date;
+		// JST基準で日付範囲を作成（サーバーのタイムゾーンに依存しない）
+		let jstStartTime: Date;
+		let jstEndTime: Date;
 		
 		if (targetDate) {
 			try {
-				// JST（UTC+9）で指定された日付を解析
 				const [year, month, day] = targetDate.split('-').map(Number);
-				if (year && month && day) {
-					// JST（UTC+9）のタイムゾーンで日付を作成
-					today = new Date(year, month - 1, day);
-					today.setHours(0, 0, 0, 0);
-					tomorrow = new Date(today);
-					tomorrow.setDate(tomorrow.getDate() + 1);
-				} else {
+				if (!year || !month || !day) {
 					throw new Error('Invalid date format');
 				}
+				
+				// JST（UTC+9）での指定日の00:00:00 UTCタイムスタンプを計算
+				const jstDate = new Date(Date.UTC(year, month - 1, day, -9, 0, 0, 0)); // UTC-9時間でJST00:00
+				jstStartTime = jstDate;
+				jstEndTime = new Date(jstDate.getTime() + 24 * 60 * 60 * 1000); // 24時間後
 			} catch {
 				throw new Error('日付の形式が正しくありません。YYYY-MM-DD形式で入力してください。');
 			}
 		} else {
-			// JST（UTC+9）で今日の日付を取得
+			// 現在のJST日付を取得
 			const now = new Date();
-			const jstOffset = 9 * 60 * 60 * 1000; // JST offset in milliseconds
-			const jstNow = new Date(now.getTime() + jstOffset);
+			const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+			const year = jstNow.getUTCFullYear();
+			const month = jstNow.getUTCMonth();
+			const day = jstNow.getUTCDate();
 			
-			today = new Date(jstNow.getFullYear(), jstNow.getMonth(), jstNow.getDate());
-			tomorrow = new Date(today);
-			tomorrow.setDate(tomorrow.getDate() + 1);
+			// JST今日の00:00:00 UTCタイムスタンプ
+			jstStartTime = new Date(Date.UTC(year, month, day, -9, 0, 0, 0));
+			jstEndTime = new Date(jstStartTime.getTime() + 24 * 60 * 60 * 1000);
 		}
 
 		let channelIds: string[];
@@ -342,12 +377,8 @@ export async function generateDailySummary(
 					let foundOldMessage = false;
 
 					for (const message of messagesArray) {
-						const jstOffset = 9 * 60 * 60 * 1000;
-						const messageJstDate = new Date(message.createdAt.getTime() + jstOffset);
-						const messageDate = new Date(messageJstDate.getFullYear(), messageJstDate.getMonth(), messageJstDate.getDate());
-						
-						if (messageDate.getTime() < today.getTime()) {
-							// 指定日より古いメッセージが見つかったら、それ以降は取得しない
+						// メッセージがJST基準の対象日より古いかチェック
+						if (message.createdAt < jstStartTime) {
 							foundOldMessage = true;
 							break;
 						}
@@ -366,13 +397,10 @@ export async function generateDailySummary(
 
 				// 指定日のメッセージのみをフィルタリング（JSTベース）
 				for (const message of allMessages) {
-					// メッセージの作成日時をJSTに変換
-					const jstOffset = 9 * 60 * 60 * 1000;
-					const messageJstDate = new Date(message.createdAt.getTime() + jstOffset);
-					const messageDate = new Date(messageJstDate.getFullYear(), messageJstDate.getMonth(), messageJstDate.getDate());
-					
+					// メッセージがJST基準の対象日の範囲内かチェック
 					if (
-						messageDate.getTime() === today.getTime() &&
+						message.createdAt >= jstStartTime &&
+						message.createdAt < jstEndTime &&
 						!message.author.bot
 					) {
 						if (message.content && message.content.length > 0) {
