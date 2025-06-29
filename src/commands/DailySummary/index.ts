@@ -164,6 +164,9 @@ export async function generateDailySummary(
 			author: string;
 			content: string;
 			timestamp: Date;
+			messageId: string;
+			channelId: string;
+			guildId: string;
 		}> = [];
 
 		for (const channelId of channelIds) {
@@ -245,6 +248,9 @@ export async function generateDailySummary(
 								author: message.author.displayName || message.author.username,
 								content: content,
 								timestamp: message.createdAt,
+								messageId: message.id,
+								channelId: message.channelId,
+								guildId: guild.id,
 							});
 						}
 					}
@@ -274,12 +280,13 @@ export async function generateDailySummary(
 		const genAI = new GoogleGenerativeAI(googleApiKey);
 		const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
+		// 1回目のプロンプト：従来のサマリー生成
 		const messagesText = todaysMessages
 			.map((msg) => `[${msg.channel}] ${msg.author}: ${msg.content}`)
 			.join("\n");
 
-		let prompt =
-			`以下は今日投稿されたメッセージです。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を10-15個のトピックとして整理してください。
+		let firstPrompt =
+			`以下は今日投稿されたメッセージです。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を15個のトピックとして整理してください。
 特に個人のメッセージや発言を重視し、ユーザー同士の会話や個人的な出来事に焦点を当ててください。twitterやXの投稿は背景情報として使用してください。
 できるだけメッセージを多く取り上げ、小さな話題でも見逃さずに拾い上げてください。
 
@@ -295,7 +302,7 @@ ${messagesText}
 🔸 **トピック2のタイトル**
 要約内容
 
-（以下同様に10-15個のトピックを続ける）
+（以下同様に15個のトピックを続ける）
 
 注意：
 - 各トピックは簡潔に、見出し1文と、内容1文で要約
@@ -303,21 +310,84 @@ ${messagesText}
 - 各文章は短めに記述して簡潔に要点だけをまとめる
 - 個人のメッセージや会話を優先的に取り上げる
 - 小さな話題でも見逃さずに取り上げる
-- 10-15個のトピックを必ず作成する
+- 15個のトピックを必ず作成する
 `;
 
 		if (highlight) {
-			prompt += `
+			firstPrompt += `
 
 📌 **特に注目してほしい内容**: ${highlight}
 上記の内容について特に詳しく調べて、関連するメッセージがあれば優先的に取り上げて、イチオシニュースとして強調してください。`;
 		}
 
-		const result = await model.generateContent(prompt);
-		const response = result.response;
-		const summary = response.text();
+		// 1回目のプロンプト実行
+		const firstResult = await model.generateContent(firstPrompt);
+		const firstResponse = firstResult.response;
+		const basicSummary = firstResponse.text();
 
-		return summary;
+		// 2回目のプロンプト：時刻とURLを抽出・付与
+		const messagesWithMeta = todaysMessages.map((msg) => {
+			const timeString = msg.timestamp.toLocaleString('ja-JP', {
+				hour: '2-digit',
+				minute: '2-digit'
+			});
+			const messageUrl = `https://discord.com/channels/${msg.guildId}/${msg.channelId}/${msg.messageId}`;
+			return `[${timeString}] [${msg.channel}] ${msg.author}: ${msg.content} | URL: ${messageUrl}`;
+		}).join("\n");
+
+		const secondPrompt = `以下は1回目で生成したニュースサマリーです：
+
+${basicSummary}
+
+以下は元のメッセージデータ（時刻とURLを含む）です：
+
+${messagesWithMeta}
+
+上記のニュースサマリーの各トピックについて、元となったメッセージの時刻とURLを特定し、以下の形式で出力してください。
+**重要**: 時刻やURLが特定できない場合は、その部分を省略し、トピックタイトルと要約のみを出力してください：
+
+📰 **今日のサーバーニュース**
+
+🔸 **トピック1のタイトル** - 13:21
+https://discord.com/channels/...
+要約内容
+
+🔸 **トピック2のタイトル**
+要約内容
+（時刻・URLが特定できない場合の例）
+
+🔸 **トピック3のタイトル** - 21:10
+https://discord.com/channels/...
+要約内容
+
+（以下15個のトピック）
+
+必須のルール：
+- 各トピックは必ず「🔸 **」から始める
+- 時刻・URLが特定できる場合のみ追加する（無理に推測しない）
+- 時刻は HH:MM 形式、URLは正確なDiscordメッセージリンクのみ使用
+- 特定できない場合は、トピックタイトルの後に改行して要約のみを記載
+- 15個のトピックすべてを必ず出力する`;
+
+		// 2回目のプロンプト実行とフォールバック処理
+		try {
+			const secondResult = await model.generateContent(secondPrompt);
+			const secondResponse = secondResult.response;
+			const finalSummary = secondResponse.text();
+
+			// AIの応答が正しい形式かチェック
+			if (finalSummary.includes('📰 **今日のサーバーニュース**') && 
+				finalSummary.includes('🔸 **')) {
+				return finalSummary;
+			}
+			// 形式が正しくない場合は1回目のサマリーにフォールバック
+			logError('Second prompt failed to generate proper format, falling back to basic summary');
+			return basicSummary;
+		} catch (secondError) {
+			// 2回目のプロンプトが失敗した場合は1回目のサマリーを返す
+			logError(`Second prompt failed: ${secondError}, falling back to basic summary`);
+			return basicSummary;
+		}
 	} catch (error) {
 		logError(`Error generating daily summary: ${error}`);
 		throw error;
