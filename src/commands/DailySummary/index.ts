@@ -10,6 +10,77 @@ import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { dailyChannelService } from "../../services/DailyChannelService";
 
+// メッセージ分割関数
+function splitMessage(message: string, maxLength: number): string[] {
+	const chunks: string[] = [];
+	
+	if (message.length <= maxLength) {
+		return [message];
+	}
+	
+	// トピック単位で分割を試みる
+	const topicSeparator = /🔸 \*\*/g;
+	const topics = message.split(topicSeparator);
+	
+	let currentChunk = topics[0]; // ヘッダー部分
+	
+	for (let i = 1; i < topics.length; i++) {
+		const topicContent = `🔸 **${topics[i]}`;
+		
+		if ((currentChunk + topicContent).length <= maxLength) {
+			currentChunk += topicContent;
+		} else {
+			// 現在のチャンクを保存し、新しいチャンクを開始
+			if (currentChunk.trim()) {
+				chunks.push(currentChunk.trim());
+			}
+			currentChunk = topicContent;
+			
+			// 単一トピックが最大長を超える場合は強制分割
+			if (currentChunk.length > maxLength) {
+				const forceSplit = forceSplitMessage(currentChunk, maxLength);
+				chunks.push(...forceSplit.slice(0, -1));
+				currentChunk = forceSplit[forceSplit.length - 1];
+			}
+		}
+	}
+	
+	// 最後のチャンクを追加
+	if (currentChunk.trim()) {
+		chunks.push(currentChunk.trim());
+	}
+	
+	return chunks.length > 0 ? chunks : [message.substring(0, maxLength)];
+}
+
+// 強制分割関数（改行を考慮）
+function forceSplitMessage(message: string, maxLength: number): string[] {
+	const chunks: string[] = [];
+	let currentPos = 0;
+	
+	while (currentPos < message.length) {
+		let chunkEnd = Math.min(currentPos + maxLength, message.length);
+		
+		// 改行で分割できる場合はそこで分割
+		if (chunkEnd < message.length) {
+			const lastNewline = message.lastIndexOf('\n', chunkEnd);
+			if (lastNewline > currentPos) {
+				chunkEnd = lastNewline;
+			}
+		}
+		
+		chunks.push(message.substring(currentPos, chunkEnd));
+		currentPos = chunkEnd;
+		
+		// 改行文字をスキップ
+		if (currentPos < message.length && message[currentPos] === '\n') {
+			currentPos++;
+		}
+	}
+	
+	return chunks;
+}
+
 // Twitter/X URL検出とコンテンツ取得のヘルパー関数
 function extractTwitterUrls(content: string): string[] {
 	const twitterUrlRegex =
@@ -61,15 +132,19 @@ export const DailySummaryCommand: CommandDefinition = {
 			type: "STRING",
 			required: false,
 		},
+		{
+			name: "date",
+			description: "サマリー対象日付（JST、例：2025-06-30）",
+			type: "STRING",
+			required: false,
+		},
 	],
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
 		try {
-			await interaction.deferReply({
-				ephemeral: false,
-				fetchReply: true,
-			});
+			await interaction.deferReply();
 
 			const highlight = interaction.options.getString("highlight");
+			const dateString = interaction.options.getString("date");
 
 			if (!interaction.guild) {
 				await interaction.editReply({
@@ -79,11 +154,22 @@ export const DailySummaryCommand: CommandDefinition = {
 			}
 
 			const summaryChannelId = dailyChannelService.getSummaryChannel(interaction.guild.id);
-			const summary = await generateDailySummary(
-				interaction,
-				undefined,
-				highlight,
-			);
+			
+			// サマリー生成が時間がかかる場合があるのでタイムアウト対策
+			let summary: string;
+			try {
+				summary = await generateDailySummary(
+					interaction,
+					undefined,
+					highlight,
+					dateString,
+				);
+			} catch  {
+				await interaction.editReply({
+					content: "サマリーの生成中にエラーが発生しました。時間をおいて再度お試しください。",
+				});
+				return;
+			}
 
 			// 投稿用チャンネルが設定されている場合はそこに投稿
 			if (summaryChannelId) {
@@ -99,7 +185,15 @@ export const DailySummaryCommand: CommandDefinition = {
 
 					const summaryWithDate = `# ${dateString}のサーバーニュース\n\n${summary}`;
 
-					await (summaryChannel as TextChannel).send(summaryWithDate);
+					// メッセージが2000文字を超える場合は分割送信
+					if (summaryWithDate.length <= 2000) {
+						await (summaryChannel as TextChannel).send(summaryWithDate);
+					} else {
+						const chunks = splitMessage(summaryWithDate, 2000);
+						for (const chunk of chunks) {
+							await (summaryChannel as TextChannel).send(chunk);
+						}
+					}
 
 					await interaction.editReply({
 						content: `✅ 日次サマリーを ${summaryChannel.name} に投稿しました。`,
@@ -111,17 +205,35 @@ export const DailySummaryCommand: CommandDefinition = {
 				}
 			} else {
 				// 従来通りの動作（実行されたチャンネルに返信）
-				await interaction.editReply({
-					content: summary,
-				});
+				// メッセージが2000文字を超える場合は分割送信
+				if (summary.length <= 2000) {
+					await interaction.editReply({
+						content: summary,
+					});
+				} else {
+					const chunks = splitMessage(summary, 2000);
+					await interaction.editReply({
+						content: chunks[0],
+					});
+					// 残りのチャンクをフォローアップメッセージとして送信
+					for (let i = 1; i < chunks.length; i++) {
+						await interaction.followUp({
+							content: chunks[i],
+						});
+					}
+				}
 			}
 
 			logInfo(`Daily summary command executed by ${interaction.user.username}`);
 		} catch (error) {
 			logError(`Error executing daily summary command: ${error}`);
-			await interaction.editReply({
-				content: "サマリーの生成中にエラーが発生しました。",
-			});
+			try {
+				await interaction.editReply({
+					content: "サマリーの生成中にエラーが発生しました。",
+				});
+			} catch (replyError) {
+				logError(`Failed to send error reply: ${replyError}`);
+			}
 		}
 	},
 };
@@ -130,6 +242,7 @@ export async function generateDailySummary(
 	interaction: ChatInputCommandInteraction,
 	targetChannelIds?: string | string[],
 	highlight?: string | null,
+	targetDate?: string | null,
 ): Promise<string> {
 	try {
 		const guild = interaction.guild;
@@ -138,10 +251,35 @@ export async function generateDailySummary(
 			throw new Error("Guild not found");
 		}
 
-		const today = new Date();
-		today.setHours(0, 0, 0, 0);
-		const tomorrow = new Date(today);
-		tomorrow.setDate(tomorrow.getDate() + 1);
+		let today: Date;
+		let tomorrow: Date;
+		
+		if (targetDate) {
+			try {
+				// JST（UTC+9）で指定された日付を解析
+				const [year, month, day] = targetDate.split('-').map(Number);
+				if (year && month && day) {
+					// JST（UTC+9）のタイムゾーンで日付を作成
+					today = new Date(year, month - 1, day);
+					today.setHours(0, 0, 0, 0);
+					tomorrow = new Date(today);
+					tomorrow.setDate(tomorrow.getDate() + 1);
+				} else {
+					throw new Error('Invalid date format');
+				}
+			} catch {
+				throw new Error('日付の形式が正しくありません。YYYY-MM-DD形式で入力してください。');
+			}
+		} else {
+			// JST（UTC+9）で今日の日付を取得
+			const now = new Date();
+			const jstOffset = 9 * 60 * 60 * 1000; // JST offset in milliseconds
+			const jstNow = new Date(now.getTime() + jstOffset);
+			
+			today = new Date(jstNow.getFullYear(), jstNow.getMonth(), jstNow.getDate());
+			tomorrow = new Date(today);
+			tomorrow.setDate(tomorrow.getDate() + 1);
+		}
 
 		let channelIds: string[];
 
@@ -204,8 +342,12 @@ export async function generateDailySummary(
 					let foundOldMessage = false;
 
 					for (const message of messagesArray) {
-						if (message.createdAt < today) {
-							// 今日より古いメッセージが見つかったら、それ以降は取得しない
+						const jstOffset = 9 * 60 * 60 * 1000;
+						const messageJstDate = new Date(message.createdAt.getTime() + jstOffset);
+						const messageDate = new Date(messageJstDate.getFullYear(), messageJstDate.getMonth(), messageJstDate.getDate());
+						
+						if (messageDate.getTime() < today.getTime()) {
+							// 指定日より古いメッセージが見つかったら、それ以降は取得しない
 							foundOldMessage = true;
 							break;
 						}
@@ -222,11 +364,15 @@ export async function generateDailySummary(
 					}
 				}
 
-				// 今日のメッセージのみをフィルタリング
+				// 指定日のメッセージのみをフィルタリング（JSTベース）
 				for (const message of allMessages) {
+					// メッセージの作成日時をJSTに変換
+					const jstOffset = 9 * 60 * 60 * 1000;
+					const messageJstDate = new Date(message.createdAt.getTime() + jstOffset);
+					const messageDate = new Date(messageJstDate.getFullYear(), messageJstDate.getMonth(), messageJstDate.getDate());
+					
 					if (
-						message.createdAt >= today &&
-						message.createdAt < tomorrow &&
+						messageDate.getTime() === today.getTime() &&
 						!message.author.bot
 					) {
 						if (message.content && message.content.length > 0) {
@@ -265,7 +411,8 @@ export async function generateDailySummary(
 		}
 
 		if (todaysMessages.length === 0) {
-			return "今日はメッセージが見つかりませんでした。";
+			const targetDateStr = targetDate || "today";
+			return `${targetDateStr}はメッセージが見つかりませんでした。`;
 		}
 
 		todaysMessages.sort(
