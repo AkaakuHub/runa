@@ -18,22 +18,21 @@ const formatApologyText = async (originalText: string): Promise<string> => {
   const prompt = `以下の反省文をもとに、株式会社Anthropicが実際に発表する謝罪プレスリリースを作成してください。
 
 重要な制約：
-- 文字数は絶対に600文字以内に収める
+- 文字数は絶対に1200文字以内に収める
 - 人間が書いたような自然で簡潔な文章にする
 - AI感のある過度に丁寧な表現は避ける
 - 企業の公式謝罪文として適切だが、堅すぎない文体
 - 改善策は簡潔に1-2項目のみ
-- 「敬具」で締めくくる
-- 段落は3-4個以内
+- 段落は5-6個以内
 
 元の反省文：
 ${originalText}
 
-600文字以内の謝罪文：`;
+1200文字以内の謝罪文：`;
 
   try {
     const result = await model.generateContent(prompt);
-    const response = await result.response;
+    const response = result.response;
     return response.text();
   } catch (error) {
     console.error("Gemini API呼び出しエラー:", error);
@@ -94,7 +93,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
   const paragraphs = text.split('\n').filter(p => p.trim());
   let currentY = 440;
   const lineHeight = 36;
-  const maxWidth = width - 200; // より余裕を持たせる
+  const maxWidth = width - 200; // さらに余裕を持たせる
   const leftMargin = 100;
 
   for (const paragraph of paragraphs) {
@@ -108,8 +107,14 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
         const char = chars[charIndex];
         const testLine = currentLine + char;
         
-        // 文字数で大まかに判断（高解像度では1文字約20px）
-        if (testLine.length * 20 > maxWidth && currentLine.length > 0) {
+        // より厳密な文字幅制御（日本語は全角で約24px、英数字は約12px）
+        const estimatedWidth = testLine.split('').reduce((width, char) => {
+          // ASCIIコード範囲外は日本語として扱う
+          const charCode = char.charCodeAt(0);
+          return width + (charCode > 127 ? 24 : 12);
+        }, 0);
+        
+        if (estimatedWidth > maxWidth && currentLine.length > 0) {
           // 現在の行を描画
           svg.append("text")
             .attr("x", leftMargin)
@@ -198,14 +203,18 @@ const CcSorryCommand: CommandDefinition = {
       // Geminiで謝罪文を整形
       const formattedText = await formatApologyText(text);
 
+      // 変な文字を消す
+      // **, ##などをすべて削除
+      const cleanText = formattedText.replace(/\*\*/g, "").replace(/##/g, "").trim();
+
       // 画像生成
-      const imageBuffer = await generateApologyImage(formattedText);
-      
+      const imageBuffer = await generateApologyImage(cleanText);
+
       // 画像をDiscordに送信
       const attachment = new AttachmentBuilder(imageBuffer, { name: "apology.png" });
       
       await interaction.editReply({
-        content: "株式会社Anthropicからの謝罪プレスリリースを生成しました。",
+        content: "",
         files: [attachment],
       });
 
