@@ -62,39 +62,61 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
     .attr("height", height)
     .attr("fill", "white");
 
+  // 日付（右上）
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
+  svg.append("text")
+    .attr("x", width - 100)
+    .attr("y", 80)
+    .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
+    .attr("font-size", 20)
+    .attr("fill", "black")
+    .attr("text-anchor", "end")
+    .text(dateStr);
+
   // ヘッダー（会社名）
   svg.append("text")
     .attr("x", 100)
-    .attr("y", 160)
+    .attr("y", 140)
     .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
-    .attr("font-size", 40)
+    .attr("font-size", 28)
     .attr("fill", "black")
-    .text("Anthropic");
+    .text("株式会社Anthropic");
 
   svg.append("text")
     .attr("x", 100)
-    .attr("y", 220)
+    .attr("y", 180)
     .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
-    .attr("font-size", 40)
+    .attr("font-size", 24)
     .attr("fill", "black")
-    .text("Claude Code");
+    .text("Claude Code事業部");
 
   // タイトル
   svg.append("text")
     .attr("x", width / 2)
-    .attr("y", 360)
+    .attr("y", 280)
     .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
     .attr("font-size", 36)
     .attr("fill", "black")
     .attr("text-anchor", "middle")
     .text("お詫び");
 
+  // 拝啓
+  svg.append("text")
+    .attr("x", 100)
+    .attr("y", 340)
+    .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
+    .attr("font-size", 24)
+    .attr("fill", "black")
+    .text("拝啓");
+
   // 本文を段落に分けて配置
   const paragraphs = text.split('\n').filter(p => p.trim());
-  let currentY = 440;
+  let currentY = 400;
   const lineHeight = 36;
-  const maxWidth = width - 200; // さらに余裕を持たせる
-  const leftMargin = 100;
+  const maxWidth = width - 200; // 余裕を持たせる
+  const leftMargin = 100; // 通常の左マージン
+  const indentMargin = 140; // 段落最初の行のインデント
 
   for (const paragraph of paragraphs) {
     if (paragraph.trim()) {
@@ -102,6 +124,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
       const chars = paragraph.split('');
       let currentLine = '';
       let charIndex = 0;
+      let isFirstLineOfParagraph = true; // 段落の最初の行かどうかのフラグ
 
       while (charIndex < chars.length) {
         const char = chars[charIndex];
@@ -115,9 +138,9 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
         }, 0);
         
         if (estimatedWidth > maxWidth && currentLine.length > 0) {
-          // 現在の行を描画
+          // 現在の行を描画（段落の最初の行のみインデント）
           svg.append("text")
-            .attr("x", leftMargin)
+            .attr("x", isFirstLineOfParagraph ? indentMargin : leftMargin)
             .attr("y", currentY)
             .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
             .attr("font-size", 24)
@@ -126,6 +149,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
           
           currentY += lineHeight;
           currentLine = char;
+          isFirstLineOfParagraph = false; // 2行目以降はインデントしない
           
           // ページからはみ出さないようにチェック
           if (currentY > height - 300) break;
@@ -138,7 +162,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
       // 残りの文字を描画
       if (currentLine && currentY <= height - 300) {
         svg.append("text")
-          .attr("x", leftMargin)
+          .attr("x", isFirstLineOfParagraph ? indentMargin : leftMargin)
           .attr("y", currentY)
           .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
           .attr("font-size", 24)
