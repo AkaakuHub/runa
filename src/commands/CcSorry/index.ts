@@ -1,0 +1,219 @@
+import { type ChatInputCommandInteraction, AttachmentBuilder } from "discord.js";
+import sharp from "sharp";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import * as d3 from "d3";
+import { JSDOM } from "jsdom";
+import type { CommandDefinition } from "../../types";
+
+// Geminiを使って反省文を株式会社Anthropicの謝罪文に整形
+const formatApologyText = async (originalText: string): Promise<string> => {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    throw new Error("GOOGLE_API_KEY環境変数が設定されていません");
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+  const prompt = `以下の反省文をもとに、株式会社Anthropicが実際に発表する謝罪プレスリリースを作成してください。
+
+重要な制約：
+- 文字数は絶対に600文字以内に収める
+- 人間が書いたような自然で簡潔な文章にする
+- AI感のある過度に丁寧な表現は避ける
+- 企業の公式謝罪文として適切だが、堅すぎない文体
+- 改善策は簡潔に1-2項目のみ
+- 「敬具」で締めくくる
+- 段落は3-4個以内
+
+元の反省文：
+${originalText}
+
+600文字以内の謝罪文：`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text();
+  } catch (error) {
+    console.error("Gemini API呼び出しエラー:", error);
+    throw new Error("謝罪文の整形に失敗しました");
+  }
+};
+
+const generateApologyImage = async (text: string): Promise<Buffer> => {
+  const width = 1190; // A4サイズ（144dpi - 高解像度）
+  const height = 1684;
+  
+  // JSDOMで仮想DOM環境を作成
+  const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+  global.document = dom.window.document;
+  
+  // SVGコンテナを作成
+  const svg = d3
+    .select(dom.window.document.body)
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("xmlns", "http://www.w3.org/2000/svg");
+
+  // 背景を白に設定
+  svg.append("rect")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("fill", "white");
+
+  // ヘッダー（会社名）
+  svg.append("text")
+    .attr("x", 100)
+    .attr("y", 160)
+    .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
+    .attr("font-size", 40)
+    .attr("fill", "black")
+    .text("Anthropic");
+
+  svg.append("text")
+    .attr("x", 100)
+    .attr("y", 220)
+    .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
+    .attr("font-size", 40)
+    .attr("fill", "black")
+    .text("Claude Code");
+
+  // タイトル
+  svg.append("text")
+    .attr("x", width / 2)
+    .attr("y", 360)
+    .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
+    .attr("font-size", 36)
+    .attr("fill", "black")
+    .attr("text-anchor", "middle")
+    .text("お詫び");
+
+  // 本文を段落に分けて配置
+  const paragraphs = text.split('\n').filter(p => p.trim());
+  let currentY = 440;
+  const lineHeight = 36;
+  const maxWidth = width - 200; // より余裕を持たせる
+  const leftMargin = 100;
+
+  for (const paragraph of paragraphs) {
+    if (paragraph.trim()) {
+      // 文字数で行を分割（日本語文字を考慮）
+      const chars = paragraph.split('');
+      let currentLine = '';
+      let charIndex = 0;
+
+      while (charIndex < chars.length) {
+        const char = chars[charIndex];
+        const testLine = currentLine + char;
+        
+        // 文字数で大まかに判断（高解像度では1文字約20px）
+        if (testLine.length * 20 > maxWidth && currentLine.length > 0) {
+          // 現在の行を描画
+          svg.append("text")
+            .attr("x", leftMargin)
+            .attr("y", currentY)
+            .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
+            .attr("font-size", 24)
+            .attr("fill", "black")
+            .text(currentLine);
+          
+          currentY += lineHeight;
+          currentLine = char;
+          
+          // ページからはみ出さないようにチェック
+          if (currentY > height - 300) break;
+        } else {
+          currentLine = testLine;
+        }
+        charIndex++;
+      }
+      
+      // 残りの文字を描画
+      if (currentLine && currentY <= height - 300) {
+        svg.append("text")
+          .attr("x", leftMargin)
+          .attr("y", currentY)
+          .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
+          .attr("font-size", 24)
+          .attr("fill", "black")
+          .text(currentLine);
+        
+        currentY += lineHeight + 20; // 段落間の余白
+      }
+    }
+  }
+
+  // 署名
+  svg.append("text")
+    .attr("x", width - 100)
+    .attr("y", height - 200)
+    .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
+    .attr("font-size", 24)
+    .attr("fill", "black")
+    .attr("text-anchor", "end")
+    .text("敬具");
+
+  // ページ番号
+  svg.append("text")
+    .attr("x", width / 2)
+    .attr("y", height - 60)
+    .attr("font-family", "Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif")
+    .attr("font-size", 24)
+    .attr("fill", "black")
+    .attr("text-anchor", "middle")
+    .text("1");
+
+  // SVGの内容を取得
+  const svgContent = dom.window.document.body.innerHTML;
+  
+  // SVGをPNGに変換
+  return sharp(Buffer.from(svgContent))
+    .png()
+    .toBuffer();
+};
+
+const CcSorryCommand: CommandDefinition = {
+  name: "ccsorry",
+  description: "反省文を株式会社Anthropicの謝罪プレスリリース形式の画像として生成",
+  options: [
+    {
+      name: "text",
+      description: "謝罪文の内容",
+      type: "STRING",
+      required: true,
+    },
+  ],
+  execute: async (interaction: ChatInputCommandInteraction) => {
+    try {
+      await interaction.deferReply();
+
+      const text = interaction.options.getString("text");
+      if (!text) {
+        await interaction.editReply("テキストが提供されていません。");
+        return;
+      }
+
+      // Geminiで謝罪文を整形
+      const formattedText = await formatApologyText(text);
+
+      // 画像生成
+      const imageBuffer = await generateApologyImage(formattedText);
+      
+      // 画像をDiscordに送信
+      const attachment = new AttachmentBuilder(imageBuffer, { name: "apology.png" });
+      
+      await interaction.editReply({
+        content: "株式会社Anthropicからの謝罪プレスリリースを生成しました。",
+        files: [attachment],
+      });
+
+    } catch (error) {
+      console.error("CcSorryコマンドでエラーが発生しました:", error);
+      await interaction.editReply("画像の生成中にエラーが発生しました。");
+    }
+  },
+};
+
+export default CcSorryCommand;

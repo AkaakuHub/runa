@@ -11,6 +11,7 @@ import { PingCommand } from "./Ping";
 import { DailySummaryCommand } from "./DailySummary";
 import { DailyConfigCommand } from "./DailyConfig";
 import { HistorySearchCommand } from "./HistorySearch";
+import CcSorryCommand from "./CcSorry";
 
 // すべての公開するコマンドの一覧
 const commandsList: CommandDefinition[] = [
@@ -19,6 +20,7 @@ const commandsList: CommandDefinition[] = [
 	DailySummaryCommand,
 	DailyConfigCommand,
 	HistorySearchCommand,
+	CcSorryCommand,
 	JoinCommand,
 	ByeCommand,
 	SkipCommand,
