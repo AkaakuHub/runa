@@ -238,7 +238,7 @@ const CcSorryCommand: CommandDefinition = {
       const attachment = new AttachmentBuilder(imageBuffer, { name: "apology.png" });
       
       await interaction.editReply({
-        content: "",
+        content: "株式会社Anthropicの謝罪プレスリリースを生成しました。",
         files: [attachment],
       });
 
