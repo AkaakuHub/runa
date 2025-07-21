@@ -182,9 +182,24 @@ export const DailySummaryCommand: CommandDefinition = {
 					return; // インタラクションが既に無効
 				}
 				
+				let errorMessage = "サマリーの生成中にエラーが発生しました。";
+				
+				// エラー種別に応じたメッセージを生成
+				if (error instanceof Error) {
+					if (error.message.includes('503') || error.message.includes('overloaded')) {
+						errorMessage = "🔄 Google AIのサーバーが混雑しています。しばらく時間をおいて再度お試しください。";
+					} else if (error.message.includes('timeout')) {
+						errorMessage = "⏱️ サマリー生成がタイムアウトしました。時間をおいて再度お試しください。";
+					} else if (error.message.includes('API key')) {
+						errorMessage = "🔑 API設定に問題があります。管理者にお問い合わせください。";
+					} else {
+						errorMessage = "❌ サマリーの生成中にエラーが発生しました。時間をおいて再度お試しください。";
+					}
+				}
+				
 				try {
 					await interaction.editReply({
-						content: "サマリーの生成中にエラーが発生しました。時間をおいて再度お試しください。",
+						content: errorMessage,
 					});
 				} catch (replyError) {
 					logError(`Failed to send error message: ${replyError}`);
@@ -453,7 +468,46 @@ export async function generateDailySummary(
 		}
 
 		const genAI = new GoogleGenerativeAI(googleApiKey);
-		const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+		
+		// リトライ機能付きでモデル取得・実行
+		const generateWithRetry = async (prompt: string, maxRetries = 3, fallbackModel = "gemini-1.5-flash"): Promise<string> => {
+			let lastError: any;
+			
+			// まず優先モデルで試行
+			for (let attempt = 1; attempt <= maxRetries; attempt++) {
+				try {
+					const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+					const result = await model.generateContent(prompt);
+					return result.response.text();
+				} catch (error: any) {
+					lastError = error;
+					logError(`Attempt ${attempt} with gemini-2.0-flash failed: ${error}`);
+					
+					// 503エラー（overloaded）の場合は指数バックオフで待機
+					if (error.message?.includes('503') || error.message?.includes('overloaded')) {
+						if (attempt < maxRetries) {
+							const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 8000); // 1s, 2s, 4s, max 8s
+							logInfo(`Waiting ${waitTime}ms before retry...`);
+							await new Promise(resolve => setTimeout(resolve, waitTime));
+						}
+					} else {
+						// 503以外のエラーは即座にフォールバックへ
+						break;
+					}
+				}
+			}
+			
+			// フォールバックモデルで試行
+			try {
+				logInfo(`Falling back to ${fallbackModel} model`);
+				const fallbackModelInstance = genAI.getGenerativeModel({ model: fallbackModel });
+				const result = await fallbackModelInstance.generateContent(prompt);
+				return result.response.text();
+			} catch (fallbackError) {
+				logError(`Fallback model ${fallbackModel} also failed: ${fallbackError}`);
+				throw lastError; // 元のエラーを投げる
+			}
+		};
 
 		// 1回目のプロンプト：従来のサマリー生成
 		const messagesText = todaysMessages
@@ -497,9 +551,7 @@ ${messagesText}
 		}
 
 		// 1回目のプロンプト実行
-		const firstResult = await model.generateContent(firstPrompt);
-		const firstResponse = firstResult.response;
-		const basicSummary = firstResponse.text();
+		const basicSummary = await generateWithRetry(firstPrompt);
 
 		// 2回目のプロンプト：時刻とURLを抽出・付与
 		const messagesWithMeta = todaysMessages.map((msg) => {
@@ -547,9 +599,7 @@ https://discord.com/channels/...
 
 		// 2回目のプロンプト実行とフォールバック処理
 		try {
-			const secondResult = await model.generateContent(secondPrompt);
-			const secondResponse = secondResult.response;
-			const finalSummary = secondResponse.text();
+			const finalSummary = await generateWithRetry(secondPrompt);
 
 			// AIの応答が正しい形式かチェック
 			if (finalSummary.includes('📰 **今日のサーバーニュース**') && 
