@@ -21,6 +21,13 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	// ボットのメッセージは無視
 	if (message.author.bot) return;
 
+	// がああパターンのチェック
+	const goosePattern = /が[ぁあ]+/;
+	if (goosePattern.test(message.content)) {
+		await message.react("🦆");
+		return;
+	}
+
 	const iyaMessageDict = {
 		"寝る！": ["眠くなったら"],
 		"起きる！": ["お昼過ぎに", "お昼すぎに"],
