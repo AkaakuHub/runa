@@ -22,7 +22,7 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	if (message.author.bot) return;
 
 	// がああパターンのチェック
-	const goosePattern = /が[ぁあ][ぁあ]+/;
+	const goosePattern = /が[ぁあ]{2,}/;
 	if (goosePattern.test(message.content)) {
 		await message.react("🦆");
 		return;
