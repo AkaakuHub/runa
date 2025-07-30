@@ -28,6 +28,13 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		return;
 	}
 
+	// ｺｹｰｯ!!のような文字列をチェック
+	const kokePattern = /[ｺコ][ｹケ][ｰー]+[ｯッ]!!/;
+	if (kokePattern.test(message.content)) {
+		await message.reply("💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡");
+		return;
+	}
+
 	const iyaMessageDict = {
 		"寝る！": ["眠くなったら"],
 		"起きる！": ["お昼過ぎに", "お昼すぎに"],
