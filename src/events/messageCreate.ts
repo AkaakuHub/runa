@@ -28,10 +28,11 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		return;
 	}
 
-	// ｺｹｰｯ!!のような文字列をチェック
-	const kokePattern = /[ｺコ][ｹケ][ｰー]+[ｯッ]!!/;
+	// ｺｹｰｯ!!のような文字列をチェック（!は任意）
+	const kokePattern = /[ｺコ][ｹケ][ｰー]+[ｯッ]!*/;
 	// ﾌﾞﾎｫｯのような文字列をチェック
 	const bufoPattern = /[ﾌﾞブ][ﾎホ][ｫォ]+[ｯッ]?/;
+
 	if (kokePattern.test(message.content) || bufoPattern.test(message.content)) {
 		await message.reply("💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡");
 		return;
