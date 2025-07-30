@@ -28,10 +28,16 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		return;
 	}
 
-	// ｺｹｰｯ!!のような文字列をチェック（!は任意）
-	const kokePattern = /[ｺコ][ｹケ][ｰー]+[ｯッ]!*/;
-	// ﾌﾞﾎｫｯのような文字列をチェック
-	const bufoPattern = /[ﾌﾞブ][ﾎホ][ｫォ]+[ｯッ]?/;
+	// ｺｹｰｯ!!のような文字列をチェック（前後に文字があってもOK、表記揺れ対応）
+	const kokePattern = /[ｺコこ][ｹケけ][ｰー～〜ー]*[ｯッっ]!*/i;
+	// ﾌﾞﾎｫｯのような文字列をチェック（前後に文字があってもOK、表記揺れ対応）
+	const bufoPattern = /[ﾌﾞブぶ][ﾎホほ][ｫォおぉ]+[ｯッっ]?/i;
+
+	// ひっかかるかテスト
+	console.log(`Checking message content: ${message.content}`);
+	// もし「ｺｹｰｯ!!」や「ﾌﾞﾎｫｯ」が含まれていたら
+	console.log(`Koke pattern test: ${kokePattern.test(message.content)}`);
+	console.log(`Bufo pattern test: ${bufoPattern.test(message.content)}`);
 
 	if (kokePattern.test(message.content) || bufoPattern.test(message.content)) {
 		await message.reply("💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡");
