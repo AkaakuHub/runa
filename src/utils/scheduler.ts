@@ -5,16 +5,16 @@ import {
 	type TextChannel,
 	type ChatInputCommandInteraction,
 } from "discord.js";
-import { generateDailySummary } from "../commands/DailySummary";
+import { generateDailySummary, splitMessage } from "../commands/DailySummary";
 import { logInfo, logError } from "./logger";
 import { dailyChannelService } from "../services/DailyChannelService";
 
 export function setupDailySummaryScheduler(client: Client): void {
 	cron.schedule(
-		"20 23 * * *",
+		"50 23 * * *",
 		async () => {
 			try {
-				logInfo("🕒 Daily summary cron job triggered at 23:20 JST");
+				logInfo("🕒 Daily summary cron job triggered at 23:50 JST");
 				logInfo("Starting scheduled daily summary generation...");
 
 				const guilds = client.guilds.cache;
@@ -93,10 +93,19 @@ export function setupDailySummaryScheduler(client: Client): void {
 
 						const summaryWithDate = `# ${dateString}のサーバーニュース\n\n${summary}`;
 
-						await targetChannel.send(summaryWithDate);
+						// メッセージが2000文字を超える場合は分割送信
+						if (summaryWithDate.length <= 2000) {
+							await targetChannel.send(summaryWithDate);
+						} else {
+							logInfo(`Message too long (${summaryWithDate.length} chars), splitting...`);
+							const chunks = splitMessage(summaryWithDate, 2000);
+							for (const chunk of chunks) {
+								await targetChannel.send(chunk);
+							}
+						}
 
 						logInfo(
-							`Daily summary sent to ${guild.name}#${targetChannel.name}`,
+							`✅ Daily summary sent to ${guild.name}#${targetChannel.name}`,
 						);
 					} catch (error) {
 						logError(
@@ -113,5 +122,5 @@ export function setupDailySummaryScheduler(client: Client): void {
 		},
 	);
 
-	logInfo("Daily summary scheduler initialized (23:20 JST)");
+	logInfo("Daily summary scheduler initialized (23:50 JST)");
 }

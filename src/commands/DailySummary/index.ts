@@ -11,7 +11,7 @@ import { logError, logInfo } from "../../utils/logger";
 import { dailyChannelService } from "../../services/DailyChannelService";
 
 // メッセージ分割関数
-function splitMessage(message: string, maxLength: number): string[] {
+export function splitMessage(message: string, maxLength: number): string[] {
 	const chunks: string[] = [];
 	
 	if (message.length <= maxLength) {
