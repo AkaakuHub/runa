@@ -59,7 +59,7 @@ export function setupDailySummaryScheduler(client: Client): void {
 						// 全ての対象チャンネルからメッセージを収集してサマリーを生成
 						const summary = await generateDailySummary(
 							mockInteraction,
-							configuredChannelIds,
+							configuredChannelIds
 						);
 
 						if (
