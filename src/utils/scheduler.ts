@@ -11,28 +11,34 @@ import { dailyChannelService } from "../services/DailyChannelService";
 
 export function setupDailySummaryScheduler(client: Client): void {
 	cron.schedule(
-		"50 23 * * *",
+		"20 23 * * *",
 		async () => {
 			try {
+				logInfo("🕒 Daily summary cron job triggered at 23:20 JST");
 				logInfo("Starting scheduled daily summary generation...");
 
 				const guilds = client.guilds.cache;
+				logInfo(`Found ${guilds.size} guilds to process`);
 
 				for (const [, guild] of guilds) {
 					try {
+						logInfo(`Processing guild: ${guild.name} (${guild.id})`);
 						const summaryChannelId = dailyChannelService.getSummaryChannel(guild.id);
 						const configuredChannelIds = dailyChannelService.getChannels(guild.id);
+						
+						logInfo(`Summary channel ID: ${summaryChannelId}`);
+						logInfo(`Configured channel IDs: [${configuredChannelIds.join(', ')}]`);
 
 						if (!summaryChannelId) {
 							logInfo(
-								`No summary channel configured for guild ${guild.name}`,
+								`❌ No summary channel configured for guild ${guild.name}`,
 							);
 							continue;
 						}
 
 						if (configuredChannelIds.length === 0) {
 							logInfo(
-								`No daily summary channels configured for guild ${guild.name}`,
+								`❌ No daily summary channels configured for guild ${guild.name}`,
 							);
 							continue;
 						}
@@ -57,10 +63,12 @@ export function setupDailySummaryScheduler(client: Client): void {
 						} as unknown as ChatInputCommandInteraction;
 
 						// 全ての対象チャンネルからメッセージを収集してサマリーを生成
+						logInfo(`Generating summary for guild ${guild.name}...`);
 						const summary = await generateDailySummary(
 							mockInteraction,
 							configuredChannelIds
 						);
+						logInfo(`Summary generated, length: ${summary.length} characters`);
 
 						if (
 							summary.includes(
@@ -69,7 +77,7 @@ export function setupDailySummaryScheduler(client: Client): void {
 							summary.includes("今日はメッセージが見つかりませんでした")
 						) {
 							logInfo(
-								`Skipping guild ${guild.name} - no content`,
+								`⚠️ Skipping guild ${guild.name} - no content to summarize`,
 							);
 							continue;
 						}
@@ -105,5 +113,5 @@ export function setupDailySummaryScheduler(client: Client): void {
 		},
 	);
 
-	logInfo("Daily summary scheduler initialized (23:50 JST)");
+	logInfo("Daily summary scheduler initialized (23:20 JST)");
 }
