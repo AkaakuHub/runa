@@ -28,13 +28,19 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		return;
 	}
 
-	// ｺｹｰｯ!!のような文字列をチェック（前後に文字があってもOK、表記揺れ対応）
-	const kokePattern = /[ｺコこ][ｹケけ][ｰー～〜ー]*[ｯッっ]!*/i;
-	// ﾌﾞﾎｫｯのような文字列をチェック（前後に文字があってもOK、表記揺れ対応）
-	const bufoPattern = /[ﾌﾞブぶ][ﾎホほ][ｫォおぉ]+[ｯッっ]?/i;
+	const forbiddenPatterns = [
+		// ｺｹｰｯ!!のような文字列（表記揺れ対応）
+		/[ｺコこ][ｹケけ][ｰー～〜ー]*[ｯッっ]!*/i,
+		// ﾌﾞﾎｫｯのような文字列（表記揺れ対応）
+		/[ﾌﾞブぶ][ﾎホほ][ｫォおぉ]+[ｯッっ]?/i,
+		// セキュキャンのような文字列（ひらがな・カタカナ・表記揺れ対応）
+		/(([ｾセせ][ｷキき][ｭュゅ][ｷキき][ｬャゃ])|せくきゃん|seccamp)/i,
+	];
 
-	if (kokePattern.test(message.content) || bufoPattern.test(message.content)) {
-		await message.reply("💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡");
+	if (forbiddenPatterns.some((pattern) => pattern.test(message.content))) {
+		await message.reply(
+			"💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡"
+		);
 		return;
 	}
 
@@ -71,7 +77,7 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 
 		if (!voiceChannel) {
 			await message.reply(
-				"YouTubeの音声を再生するにはボイスチャンネルに接続してください",
+				"YouTubeの音声を再生するにはボイスチャンネルに接続してください"
 			);
 			return;
 		}
@@ -94,7 +100,7 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		// URLをキューに追加
 		const response = await musicService.queueYoutubeUrl(
 			message.content,
-			message.guild.id,
+			message.guild.id
 		);
 		// レスポンスが空でない場合のみ返信（埋め込みメッセージが送信済みの場合は空文字が返る）
 		if (response) {
@@ -105,7 +111,7 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		await musicService.processQueue(message.guild.id);
 
 		logInfo(
-			`YouTube URL検出: ${message.content}, サーバー: ${message.guild.name}`,
+			`YouTube URL検出: ${message.content}, サーバー: ${message.guild.name}`
 		);
 	}
 };
