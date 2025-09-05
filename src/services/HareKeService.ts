@@ -1,8 +1,16 @@
 import { logInfo } from '../utils/logger';
 import type { HareKeResult, MessageData } from '../types';
+import { 
+	getMoonPhase, 
+	getRokuyou, 
+	getHours, 
+	getMonthDay, 
+	getDayOfWeek, 
+	getMonth, 
+	getDay, 
+	getDateSeed 
+} from '../utils/dateUtils';
 
-// 六曜の配列（先勝、友引、先負、仏滅、大安、赤口の順）
-const ROKUYOU = ['先勝', '友引', '先負', '仏滅', '大安', '赤口'] as const;
 
 // ポジティブ/ネガティブ判定用の単語リスト
 const POSITIVE_WORDS = [
@@ -88,7 +96,7 @@ function judgeActivity(messages: MessageData[]): { score: number; reason: string
 	// 時間分布の計算（一日を通してメッセージが分散しているか）
 	const hourDistribution = new Array(24).fill(0);
 	for (const msg of messages) {
-		const hour = msg.timestamp.getHours();
+		const hour = getHours(msg.timestamp);
 		hourDistribution[hour]++;
 	}
 	const activeHours = hourDistribution.filter(count => count > 0).length;
@@ -194,7 +202,7 @@ function judgeTradition(date: Date): { score: number; reason: string } {
 	const reasons: string[] = [];
 
 	// 祝日チェック
-	const monthDay = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+	const monthDay = getMonthDay(date);
 	const holiday = HOLIDAYS.get(monthDay);
 	if (holiday) {
 		score += 30;
@@ -228,7 +236,7 @@ function judgeTradition(date: Date): { score: number; reason: string } {
 			reasons.push(rokuyou);
 	}
 
-	// 月相チェック（簡易）
+	// 月相チェック（統一されたユーティリティを使用）
 	const moonPhase = getMoonPhase(date);
 	if (moonPhase === '満月') {
 		score += 15;
@@ -254,7 +262,7 @@ function judgeNature(date: Date): { score: number; reason: string } {
 	const reasons: string[] = [];
 
 	// 曜日チェック
-	const dayOfWeek = date.getDay();
+	const dayOfWeek = getDayOfWeek(date);
 	if (dayOfWeek === 5) { // 金曜日
 		score += 20;
 		reasons.push('金曜日');
@@ -270,7 +278,7 @@ function judgeNature(date: Date): { score: number; reason: string } {
 	}
 
 	// 季節チェック
-	const month = date.getMonth() + 1;
+	const month = getMonth(date);
 	if (month === 3 || month === 4 || month === 5) {
 		score += 15;
 		reasons.push('春');
@@ -285,7 +293,7 @@ function judgeNature(date: Date): { score: number; reason: string } {
 	}
 
 	// 特別な日付チェック
-	const day = date.getDate();
+	const day = getDay(date);
 	if (day === 1) {
 		score += 10;
 		reasons.push('月初');
@@ -305,7 +313,7 @@ function judgeNature(date: Date): { score: number; reason: string } {
  */
 function judgeFortune(date: Date): { score: number; reason: string } {
 	// 日付をシードとした疑似ランダム
-	const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+	const seed = getDateSeed(date);
 	const random = (seed * 9301 + 49297) % 233280 / 233280;
 	
 	const score = Math.round(random * 100);
@@ -326,40 +334,6 @@ function judgeFortune(date: Date): { score: number; reason: string } {
 	return { score, reason };
 }
 
-/**
- * 六曜を計算
- */
-function getRokuyou(date: Date): string {
-	// 旧暦換算の簡易計算（近似）
-	const month = date.getMonth() + 1;
-	const day = date.getDate();
-	const index = (month + day) % 6;
-	return ROKUYOU[index];
-}
-
-/**
- * 月相を簡易計算
- */
-function getMoonPhase(date: Date): string {
-	// 2025年1月13日が新月として計算
-	const baseDate = new Date('2025-01-13');
-	const diffDays = Math.floor((date.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24));
-	const cycle = ((diffDays % 29.5) + 29.5) % 29.5;
-
-	if (cycle < 2 || cycle > 27.5) {
-		return '新月';
-	}
-	if (cycle >= 5 && cycle <= 9) {
-		return '上弦の月';
-	}
-	if (cycle >= 12.75 && cycle <= 16.75) {
-		return '満月';
-	}
-	if (cycle >= 20 && cycle <= 24) {
-		return '下弦の月';
-	}
-	return '月';
-}
 
 /**
  * スコアからレベルを決定

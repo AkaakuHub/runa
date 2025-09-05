@@ -8,6 +8,7 @@ import {
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
+import { getJSTDateRangeFromDaysBack, formatToJapaneseDate, formatToJapaneseTime, getDaysDifference, getTimestamp } from "../../utils/dateUtils";
 
 export const HistorySearchCommand: CommandDefinition = {
 	name: "history-search",
@@ -80,10 +81,7 @@ async function performHistorySearch(
 		const textChannel = currentChannel as TextChannel;
 
 		// 検索範囲の日付を計算
-		const endDate = new Date();
-		const startDate = new Date();
-		startDate.setDate(startDate.getDate() - daysBack);
-		startDate.setHours(0, 0, 0, 0);
+		const { start: startDate, end: endDate } = getJSTDateRangeFromDaysBack(daysBack);
 
 		// メッセージを取得（進捗表示付き）
 		const messages = await fetchMessagesInDateRange(
@@ -111,7 +109,7 @@ async function performHistorySearch(
 		const messagesText = messages
 			.map(
 				(msg) =>
-					`[${msg.timestamp.toLocaleDateString("ja-JP")} ${msg.timestamp.toLocaleTimeString("ja-JP")}] ${msg.author}: ${msg.content}`,
+					`[${formatToJapaneseDate(msg.timestamp)} ${formatToJapaneseTime(msg.timestamp)}] ${msg.author}: ${msg.content}`,
 			)
 			.join("\n");
 
@@ -208,12 +206,10 @@ async function fetchMessagesInDateRange(
 			}
 
 			// 進捗表示の更新
-			const messageDate = message.createdAt.toLocaleDateString("ja-JP");
+			const messageDate = formatToJapaneseDate(message.createdAt);
 			if (lastProgressDate !== messageDate) {
 				lastProgressDate = messageDate;
-				const daysAgo = Math.floor(
-					(endDate.getTime() - message.createdAt.getTime()) / (1000 * 60 * 60 * 24),
-				);
+				const daysAgo = getDaysDifference(endDate, message.createdAt);
 				
 				// 進捗表示を更新（あまり頻繁にならないよう調整）
 				if (daysAgo !== currentDay) {
@@ -256,7 +252,7 @@ async function fetchMessagesInDateRange(
 	});
 
 	// 時系列順にソート
-	messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+	messages.sort((a, b) => getTimestamp(a.timestamp) - getTimestamp(b.timestamp));
 
 	return messages;
 }

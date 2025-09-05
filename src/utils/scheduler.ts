@@ -8,6 +8,7 @@ import {
 import { generateDailySummary, splitMessage } from "../commands/DailySummary";
 import { logInfo, logError } from "./logger";
 import { dailyChannelService } from "../services/DailyChannelService";
+import { getCurrentJSTDateString } from "./dateUtils";
 
 export function setupDailySummaryScheduler(client: Client): void {
 	cron.schedule(
@@ -82,15 +83,8 @@ export function setupDailySummaryScheduler(client: Client): void {
 							continue;
 						}
 
-						// 日付を追加してサマリーを投稿
-						const today = new Date();
-						const dateString = today.toLocaleDateString('ja-JP', {
-							year: 'numeric',
-							month: 'long',
-							day: 'numeric',
-							weekday: 'long'
-						});
-
+						// 統一されたユーティリティを使用して日付を取得
+						const dateString = getCurrentJSTDateString();
 						const summaryWithDate = `# ${dateString}のサーバーニュース\n\n${summary}`;
 
 						// メッセージが2000文字を超える場合は分割送信

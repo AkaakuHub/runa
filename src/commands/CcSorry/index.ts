@@ -4,6 +4,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as d3 from "d3";
 import { JSDOM } from "jsdom";
 import type { CommandDefinition } from "../../types";
+import { getCurrentJSTDate, getLocalDateString } from "../../utils/dateUtils";
 
 // Geminiを使って反省文を株式会社Anthropicの謝罪文に整形
 const formatApologyText = async (originalText: string): Promise<string> => {
@@ -63,8 +64,8 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
     .attr("fill", "white");
 
   // 日付（右上）
-  const today = new Date();
-  const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
+  const today = getCurrentJSTDate();
+  const dateStr = getLocalDateString(today);
   svg.append("text")
     .attr("x", width - 100)
     .attr("y", 80)

@@ -10,6 +10,14 @@ import type { CommandDefinition, MessageData } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { dailyChannelService } from "../../services/DailyChannelService";
 import { HareKeService } from "../../services/HareKeService";
+import { 
+	parseJSTDateRange, 
+	getCurrentJSTDateRange, 
+	getJSTDateForJudgment,
+	getCurrentTimestamp,
+	formatToDetailedJapaneseDate,
+	getTimestamp
+} from "../../utils/dateUtils";
 
 // メッセージ分割関数
 export function splitMessage(message: string, maxLength: number): string[] {
@@ -141,7 +149,7 @@ export const DailySummaryCommand: CommandDefinition = {
 		},
 	],
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
-		const startTime = Date.now();
+		const startTime = getCurrentTimestamp();
 		
 		try {
 			await interaction.deferReply();
@@ -176,7 +184,7 @@ export const DailySummaryCommand: CommandDefinition = {
 					timeoutPromise
 				]);
 			} catch (error) {
-				const elapsed = Date.now() - startTime;
+				const elapsed = getCurrentTimestamp() - startTime;
 				logError(`Summary generation failed after ${elapsed}ms: ${error}`);
 				
 				if (!interaction.replied && !interaction.deferred) {
@@ -212,26 +220,10 @@ export const DailySummaryCommand: CommandDefinition = {
 			if (summaryChannelId) {
 				const summaryChannel = interaction.guild.channels.cache.get(summaryChannelId);
 				if (summaryChannel && summaryChannel.type === ChannelType.GuildText) {
-					let targetDateForDisplay: Date;
+					// 統一されたユーティリティを使用して日付を取得
+					const targetDateForDisplay = getJSTDateForJudgment(dateString || undefined);
 					
-					if (dateString) {
-						// 指定された日付を使用（JST）
-						const [year, month, day] = dateString.split('-').map(Number);
-						targetDateForDisplay = new Date(year, month - 1, day);
-					} else {
-						// 現在のJST日付を使用
-						const now = new Date();
-						const jstOffset = 9 * 60 * 60 * 1000;
-						const jstNow = new Date(now.getTime() + jstOffset);
-						targetDateForDisplay = new Date(jstNow.getFullYear(), jstNow.getMonth(), jstNow.getDate());
-					}
-					
-					const displayDateString = targetDateForDisplay.toLocaleDateString('ja-JP', {
-						year: 'numeric',
-						month: 'long',
-						day: 'numeric',
-						weekday: 'long'
-					});
+					const displayDateString = formatToDetailedJapaneseDate(targetDateForDisplay);
 
 					const summaryWithDate = `# ${displayDateString}のサーバーニュース\n\n${summary}`;
 
@@ -301,36 +293,10 @@ export async function generateDailySummary(
 			throw new Error("Guild not found");
 		}
 
-		// JST基準で日付範囲を作成（サーバーのタイムゾーンに依存しない）
-		let jstStartTime: Date;
-		let jstEndTime: Date;
-		
-		if (targetDate) {
-			try {
-				const [year, month, day] = targetDate.split('-').map(Number);
-				if (!year || !month || !day) {
-					throw new Error('Invalid date format');
-				}
-				
-				// JST（UTC+9）での指定日の00:00:00 UTCタイムスタンプを計算
-				const jstDate = new Date(Date.UTC(year, month - 1, day, -9, 0, 0, 0)); // UTC-9時間でJST00:00
-				jstStartTime = jstDate;
-				jstEndTime = new Date(jstDate.getTime() + 24 * 60 * 60 * 1000); // 24時間後
-			} catch {
-				throw new Error('日付の形式が正しくありません。YYYY-MM-DD形式で入力してください。');
-			}
-		} else {
-			// 現在のJST日付を取得
-			const now = new Date();
-			const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-			const year = jstNow.getUTCFullYear();
-			const month = jstNow.getUTCMonth();
-			const day = jstNow.getUTCDate();
-			
-			// JST今日の00:00:00 UTCタイムスタンプ
-			jstStartTime = new Date(Date.UTC(year, month, day, -9, 0, 0, 0));
-			jstEndTime = new Date(jstStartTime.getTime() + 24 * 60 * 60 * 1000);
-		}
+		// JST基準で日付範囲を作成（統一されたユーティリティを使用）
+		const { start: jstStartTime, end: jstEndTime } = targetDate 
+			? parseJSTDateRange(targetDate)
+			: getCurrentJSTDateRange();
 
 		let channelIds: string[];
 
@@ -454,16 +420,10 @@ export async function generateDailySummary(
 			}
 		}
 
-		if (todaysMessages.length === 0) {
-			const targetDateStr = targetDate || "today";
-			return `${targetDateStr}はメッセージが見つかりませんでした。`;
-		}
+		// ハレ・ケ判定用の日付を準備（統一されたユーティリティを使用）
+		const targetDateForJudgment = getJSTDateForJudgment(targetDate || undefined);
 
-		todaysMessages.sort(
-			(a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
-		);
-
-		// ハレ・ケ判定を実行
+		// ハレ・ケ判定を実行（メッセージが0件でも実行）
 		const messageDataForHareKe: MessageData[] = todaysMessages.map(msg => ({
 			content: msg.content,
 			author: msg.author,
@@ -471,17 +431,18 @@ export async function generateDailySummary(
 			channel: msg.channel
 		}));
 
-		let targetDateForJudgment: Date;
-		if (targetDate) {
-			const [year, month, day] = targetDate.split('-').map(Number);
-			targetDateForJudgment = new Date(year, month - 1, day);
-		} else {
-			const now = new Date();
-			const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-			targetDateForJudgment = new Date(jstNow.getUTCFullYear(), jstNow.getUTCMonth(), jstNow.getUTCDate());
+		const hareKeResult = await HareKeService.judge(messageDataForHareKe, targetDateForJudgment);
+
+		// メッセージが0件の場合でもハレ・ケ判定付きで返す
+		if (todaysMessages.length === 0) {
+			const targetDateStr = targetDate || "today";
+			const noMessagesSummary = `📰 **今日のサーバーニュース**\n\n${targetDateStr}はメッセージが見つかりませんでした。`;
+			return generateFinalOutputWithHareKe(noMessagesSummary, hareKeResult);
 		}
 
-		const hareKeResult = await HareKeService.judge(messageDataForHareKe, targetDateForJudgment);
+		todaysMessages.sort(
+			(a, b) => getTimestamp(a.timestamp) - getTimestamp(b.timestamp),
+		);
 
 		const googleApiKey = process.env.GOOGLE_API_KEY;
 		if (!googleApiKey) {

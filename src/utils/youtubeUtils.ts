@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import { logError, logInfo } from "../../src/utils/logger";
+import { getCurrentTimestamp } from "./dateUtils";
 
 const execAsync = promisify(exec);
 
@@ -23,7 +24,7 @@ export async function downloadYoutubeAudio(
 		}
 
 		// 出力ファイル名の生成
-		const fileName = `${guildId}_${Date.now()}.m4a`;
+		const fileName = `${guildId}_${getCurrentTimestamp()}.m4a`;
 		const outputPath = path.join(TEMP_DIR, fileName);
 
 		logInfo(`YouTubeオーディオのダウンロード開始: ${url}`);
