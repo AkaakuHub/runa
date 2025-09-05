@@ -23,9 +23,10 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 
 	// がああパターンのチェック
 	const goosePattern = /が[ぁあ]{2,}/;
+	let hasGoosePattern = false;
 	if (goosePattern.test(message.content)) {
 		await message.react("🦆");
-		return;
+		hasGoosePattern = true;
 	}
 
 	// ｺｹｰｯ!!のような文字列をチェック（前後に文字があってもOK、表記揺れ対応）
@@ -35,6 +36,10 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 
 	if (kokePattern.test(message.content) || bufoPattern.test(message.content)) {
 		await message.reply("💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡");
+		// がああパターンも含む場合は、この後の処理を継続しない
+		if (hasGoosePattern) {
+			return;
+		}
 		return;
 	}
 
