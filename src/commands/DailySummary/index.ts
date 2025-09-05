@@ -6,9 +6,10 @@ import {
 	type Collection,
 } from "discord.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import type { CommandDefinition } from "../../types";
+import type { CommandDefinition, MessageData } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { dailyChannelService } from "../../services/DailyChannelService";
+import { HareKeService } from "../../services/HareKeService";
 
 // メッセージ分割関数
 export function splitMessage(message: string, maxLength: number): string[] {
@@ -462,6 +463,26 @@ export async function generateDailySummary(
 			(a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
 		);
 
+		// ハレ・ケ判定を実行
+		const messageDataForHareKe: MessageData[] = todaysMessages.map(msg => ({
+			content: msg.content,
+			author: msg.author,
+			timestamp: msg.timestamp,
+			channel: msg.channel
+		}));
+
+		let targetDateForJudgment: Date;
+		if (targetDate) {
+			const [year, month, day] = targetDate.split('-').map(Number);
+			targetDateForJudgment = new Date(year, month - 1, day);
+		} else {
+			const now = new Date();
+			const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+			targetDateForJudgment = new Date(jstNow.getUTCFullYear(), jstNow.getUTCMonth(), jstNow.getUTCDate());
+		}
+
+		const hareKeResult = await HareKeService.judge(messageDataForHareKe, targetDateForJudgment);
+
 		const googleApiKey = process.env.GOOGLE_API_KEY;
 		if (!googleApiKey) {
 			throw new Error("Google API key not found");
@@ -471,7 +492,7 @@ export async function generateDailySummary(
 		
 		// リトライ機能付きでモデル取得・実行
 		const generateWithRetry = async (prompt: string, maxRetries = 3, fallbackModel = "gemini-1.5-flash"): Promise<string> => {
-			let lastError: any;
+			let lastError: unknown;
 			
 			// まず優先モデルで試行
 			for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -479,14 +500,14 @@ export async function generateDailySummary(
 					const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 					const result = await model.generateContent(prompt);
 					return result.response.text();
-				} catch (error: any) {
+				} catch (error: unknown) {
 					lastError = error;
 					logError(`Attempt ${attempt} with gemini-2.0-flash failed: ${error}`);
 					
 					// 503エラー（overloaded）の場合は指数バックオフで待機
-					if (error.message?.includes('503') || error.message?.includes('overloaded')) {
+					if (error instanceof Error && (error.message?.includes('503') || error.message?.includes('overloaded'))) {
 						if (attempt < maxRetries) {
-							const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 8000); // 1s, 2s, 4s, max 8s
+							const waitTime = Math.min(1000 * (2 ** (attempt - 1)), 8000); // 1s, 2s, 4s, max 8s
 							logInfo(`Waiting ${waitTime}ms before retry...`);
 							await new Promise(resolve => setTimeout(resolve, waitTime));
 						}
@@ -509,52 +530,7 @@ export async function generateDailySummary(
 			}
 		};
 
-		// 1回目のプロンプト：従来のサマリー生成
-		const messagesText = todaysMessages
-			.map((msg) => `[${msg.channel}] ${msg.author}: ${msg.content}`)
-			.join("\n");
-
-		let firstPrompt =
-			`以下は今日投稿されたメッセージです。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を15個のトピックとして整理してください。
-特に個人のメッセージや発言を重視し、ユーザー同士の会話や個人的な出来事に焦点を当ててください。twitterやXの投稿は背景情報として使用してください。
-できるだけメッセージを多く取り上げ、小さな話題でも見逃さずに拾い上げてください。また、プロの新聞記者の立場として、評論家のような視点で内容をまとめてください。
-"はい、承知いたしました。以下に、ご指定の形式で出力します。"のような不要な文章は含めないでください。
-
-メッセージ:
-${messagesText}
-
-以下の形式でまとめてください：
-📰 **今日のサーバーニュース**
-
-🔸 **トピック1のタイトル**
-要約内容
-
-🔸 **トピック2のタイトル**
-要約内容
-
-（以下同様に合計15個のトピックを続ける）
-
-注意：
-- 各トピックは見出し1文と、内容2文で要約し、しっかりと中身のあるニュースにする
-- 日本語で出力
-- 評論家のような視点で、ニュース記事のようにまとめる
-- 各トピックは必ず「🔸 **」から始める
-- 個人のメッセージや会話を優先的に取り上げる
-- 小さな話題でも見逃さずに取り上げる
-- 15個のトピックを必ず作成する
-`;
-
-		if (highlight) {
-			firstPrompt += `
-
-📌 **特に注目してほしい内容**: ${highlight}
-上記の内容について特に詳しく調べて、関連するメッセージがあれば優先的に取り上げて、イチオシニュースとして強調してください。`;
-		}
-
-		// 1回目のプロンプト実行
-		const basicSummary = await generateWithRetry(firstPrompt);
-
-		// 2回目のプロンプト：時刻とURLを抽出・付与
+		// メッセージデータを時刻とURL付きで準備
 		const messagesWithMeta = todaysMessages.map((msg) => {
 			const timeString = msg.timestamp.toLocaleString('ja-JP', {
 				hour: '2-digit',
@@ -564,17 +540,17 @@ ${messagesText}
 			return `[${timeString}] [${msg.channel}] ${msg.author}: ${msg.content} | URL: ${messageUrl}`;
 		}).join("\n");
 
-		const secondPrompt = `以下は1回目で生成したニュースサマリーです：
+		// シンプル化した1回のプロンプトで全て処理
+		let prompt =
+			`以下は今日投稿されたメッセージです（時刻とURL付き）。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を15個のトピックとして整理してください。
+特に個人のメッセージや発言を重視し、ユーザー同士の会話や個人的な出来事に焦点を当ててください。twitterやXの投稿は背景情報として使用してください。
+できるだけメッセージを多く取り上げ、小さな話題でも見逃さずに拾い上げてください。また、プロの新聞記者の立場として、評論家のような視点で、かつ、ユーモアを交えた、読者を楽しませるような文章を書いてください。
+"はい、承知いたしました。以下に、ご指定の形式で出力します。"のような不要な文章は含めないでください。
 
-${basicSummary}
-
-以下は元のメッセージデータ（時刻とURLを含む）です：
-
+メッセージ:
 ${messagesWithMeta}
 
-上記のニュースサマリーの各トピックについて、元となったメッセージの時刻とURLを特定し、以下の形式で出力してください。
-**重要**: 時刻やURLが特定できない場合は、その部分を省略し、トピックタイトルと要約のみを出力してください：
-
+以下の形式でまとめてください：
 📰 **今日のサーバーニュース**
 
 🔸 **トピック1のタイトル** - 13:21
@@ -589,34 +565,64 @@ https://discord.com/channels/...
 https://discord.com/channels/...
 要約内容
 
-（以下15個のトピック）
+（以下同様に合計15個のトピックを続ける）
 
-必須のルール：
+注意：
+- 各トピックは見出し1文と、内容2文で要約し、しっかりと中身のあるニュースにする
+- 日本語で出力
+- 評論家のような視点で、ニュース記事のようにまとめる
 - 各トピックは必ず「🔸 **」から始める
 - 時刻・URLが特定できる場合のみ追加する（無理に推測しない）
 - 時刻は HH:MM 形式、URLは正確なDiscordメッセージリンクのみ使用
-- 特定できない場合は、トピックタイトルの後に改行して要約のみを記載
-- 15個のトピックすべてを必ず出力する`;
+- 個人のメッセージや会話を優先的に取り上げる
+- 小さな話題でも見逃さずに取り上げる
+- 15個のトピックを必ず作成する
+`;
 
-		// 2回目のプロンプト実行とフォールバック処理
-		try {
-			const finalSummary = await generateWithRetry(secondPrompt);
+		if (highlight) {
+			prompt += `
 
-			// AIの応答が正しい形式かチェック
-			if (finalSummary.includes('📰 **今日のサーバーニュース**') && 
-				finalSummary.includes('🔸 **')) {
-				return finalSummary;
-			}
-			// 形式が正しくない場合は1回目のサマリーにフォールバック
-			logError('Second prompt failed to generate proper format, falling back to basic summary');
-			return basicSummary;
-		} catch (secondError) {
-			// 2回目のプロンプトが失敗した場合は1回目のサマリーを返す
-			logError(`Second prompt failed: ${secondError}, falling back to basic summary`);
-			return basicSummary;
+📌 **特に注目してほしい内容**: ${highlight}
+上記の内容について特に詳しく調べて、関連するメッセージがあれば優先的に取り上げて、イチオシニュースとして強調してください。`;
 		}
+
+		// 1回のプロンプト実行
+		const summary = await generateWithRetry(prompt);
+		
+		// ハレ・ケ判定結果を統合した最終出力を生成
+		return generateFinalOutputWithHareKe(summary, hareKeResult);
 	} catch (error) {
 		logError(`Error generating daily summary: ${error}`);
 		throw error;
 	}
+}
+
+/**
+ * ハレ・ケ判定結果を統合した最終出力を生成
+ */
+function generateFinalOutputWithHareKe(summary: string, hareKeResult: import("../../types").HareKeResult): string {
+	// ハレ・ケ判定ヘッダーを作成
+	const hareKeHeader = `${hareKeResult.emoji} **${hareKeResult.title}** (${hareKeResult.score}%)
+┌─ 判定理由 ─────────────────┐
+│ 💬 活動: ${hareKeResult.breakdown.activity.reason.padEnd(20)} │
+│ 😊 感情: ${hareKeResult.breakdown.emotion.reason.padEnd(20)} │
+│ 📅 伝統: ${hareKeResult.breakdown.tradition.reason.padEnd(20)} │
+│ 🌤️ 自然: ${hareKeResult.breakdown.nature.reason.padEnd(20)} │
+│ ✨ 運命: ${hareKeResult.breakdown.fortune.reason.padEnd(20)} │
+└──────────────────────────┘
+
+`;
+
+	// フッターメッセージを作成
+	const hareKeFooter = `
+
+🔮 **明日への一言**
+${hareKeResult.message}`;
+
+	// サマリーがニュースヘッダーで始まる場合は、その前にハレ・ケ判定を挿入
+	if (summary.includes('📰 **今日のサーバーニュース**')) {
+		return `${summary.replace('📰 **今日のサーバーニュース**', `${hareKeHeader}📰 **今日のサーバーニュース**`)}${hareKeFooter}`;
+	}
+	// ニュースヘッダーがない場合は単純に前後に追加
+	return `${hareKeHeader}${summary}${hareKeFooter}`;
 }
