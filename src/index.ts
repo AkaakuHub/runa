@@ -4,7 +4,6 @@ import { config } from "./config/config";
 import { setupEventListeners } from "./events";
 import { logInfo } from "./utils/logger";
 import { setupDailySummaryScheduler } from "./utils/scheduler";
-import { startRssScheduler } from "./utils/rssScheduler";
 
 // 環境変数の読み込みを確実に行う
 dotenv.config();
@@ -27,7 +26,6 @@ client.once("ready", () => {
 	);
 
 	setupDailySummaryScheduler(client);
-	startRssScheduler(client);
 });
 
 // イベントリスナーのセットアップ
