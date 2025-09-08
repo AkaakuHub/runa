@@ -19,76 +19,7 @@ import {
 	getTimestamp
 } from "../../utils/dateUtils";
 
-// メッセージ分割関数
-export function splitMessage(message: string, maxLength: number): string[] {
-	const chunks: string[] = [];
-	
-	if (message.length <= maxLength) {
-		return [message];
-	}
-	
-	// トピック単位で分割を試みる
-	const topicSeparator = /🔸 \*\*/g;
-	const topics = message.split(topicSeparator);
-	
-	let currentChunk = topics[0]; // ヘッダー部分
-	
-	for (let i = 1; i < topics.length; i++) {
-		const topicContent = `🔸 **${topics[i]}`;
-		
-		if ((currentChunk + topicContent).length <= maxLength) {
-			currentChunk += topicContent;
-		} else {
-			// 現在のチャンクを保存し、新しいチャンクを開始
-			if (currentChunk.trim()) {
-				chunks.push(currentChunk.trim());
-			}
-			currentChunk = topicContent;
-			
-			// 単一トピックが最大長を超える場合は強制分割
-			if (currentChunk.length > maxLength) {
-				const forceSplit = forceSplitMessage(currentChunk, maxLength);
-				chunks.push(...forceSplit.slice(0, -1));
-				currentChunk = forceSplit[forceSplit.length - 1];
-			}
-		}
-	}
-	
-	// 最後のチャンクを追加
-	if (currentChunk.trim()) {
-		chunks.push(currentChunk.trim());
-	}
-	
-	return chunks.length > 0 ? chunks : [message.substring(0, maxLength)];
-}
-
-// 強制分割関数（改行を考慮）
-function forceSplitMessage(message: string, maxLength: number): string[] {
-	const chunks: string[] = [];
-	let currentPos = 0;
-	
-	while (currentPos < message.length) {
-		let chunkEnd = Math.min(currentPos + maxLength, message.length);
-		
-		// 改行で分割できる場合はそこで分割
-		if (chunkEnd < message.length) {
-			const lastNewline = message.lastIndexOf('\n', chunkEnd);
-			if (lastNewline > currentPos) {
-				chunkEnd = lastNewline;
-			}
-		}
-		
-		chunks.push(message.substring(currentPos, chunkEnd));
-		currentPos = chunkEnd;
-		
-		// 改行文字をスキップ
-		if (currentPos < message.length && message[currentPos] === '\n') {
-			currentPos++;
-		}
-	}
-	
-	return chunks;
-}
+import { splitMessage, sendLongMessage, replyLongMessage } from "../../utils/messageUtils";
 
 // Twitter/X URL検出とコンテンツ取得のヘルパー関数
 function extractTwitterUrls(content: string): string[] {
@@ -228,14 +159,7 @@ export const DailySummaryCommand: CommandDefinition = {
 					const summaryWithDate = `# ${displayDateString}のサーバーニュース\n\n${summary}`;
 
 					// メッセージが2000文字を超える場合は分割送信
-					if (summaryWithDate.length <= 2000) {
-						await (summaryChannel as TextChannel).send(summaryWithDate);
-					} else {
-						const chunks = splitMessage(summaryWithDate, 2000);
-						for (const chunk of chunks) {
-							await (summaryChannel as TextChannel).send(chunk);
-						}
-					}
+					await sendLongMessage(summaryChannel as TextChannel, summaryWithDate);
 
 					await interaction.editReply({
 						content: `✅ 日次サマリーを ${summaryChannel.name} に投稿しました。`,
@@ -248,22 +172,7 @@ export const DailySummaryCommand: CommandDefinition = {
 			} else {
 				// 従来通りの動作（実行されたチャンネルに返信）
 				// メッセージが2000文字を超える場合は分割送信
-				if (summary.length <= 2000) {
-					await interaction.editReply({
-						content: summary,
-					});
-				} else {
-					const chunks = splitMessage(summary, 2000);
-					await interaction.editReply({
-						content: chunks[0],
-					});
-					// 残りのチャンクをフォローアップメッセージとして送信
-					for (let i = 1; i < chunks.length; i++) {
-						await interaction.followUp({
-							content: chunks[i],
-						});
-					}
-				}
+				await replyLongMessage(interaction, summary);
 			}
 
 			logInfo(`Daily summary command executed by ${interaction.user.username}`);
