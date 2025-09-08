@@ -1,5 +1,5 @@
 import type { ChatInputCommandInteraction } from "discord.js";
-import { EmbedBuilder } from "discord.js";
+import { EmbedBuilder, MessageFlags } from "discord.js";
 import type { CommandDefinition } from "../../types";
 import { MusicService } from "../../services/MusicService";
 import { logError, logInfo } from "../../utils/logger";
@@ -11,7 +11,7 @@ export const ListCommand: CommandDefinition = {
 		if (!interaction.guild) {
 			await interaction.reply({
 				content: "このコマンドはサーバー内でのみ使用できます",
-				ephemeral: true,
+				flags: MessageFlags.Ephemeral,
 			});
 			return;
 		}
@@ -58,7 +58,7 @@ export const ListCommand: CommandDefinition = {
 			if (!interaction.replied && !interaction.deferred) {
 				await interaction.reply({
 					content: "キューの表示中にエラーが発生しました",
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			} else {
 				await interaction.editReply("キューの表示中にエラーが発生しました");

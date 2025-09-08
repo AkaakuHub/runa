@@ -1,6 +1,7 @@
 import type {
 	ChatInputCommandInteraction,
 	GuildMember,
+	MessageFlags,
 	TextChannel,
 	VoiceChannel,
 } from "discord.js";
@@ -15,7 +16,7 @@ export const JoinCommand: CommandDefinition = {
 		if (!interaction.guild) {
 			await interaction.reply({
 				content: "このコマンドはサーバー内でのみ使用できます",
-				ephemeral: true,
+				flags: MessageFlags.Ephemeral,
 			});
 			return;
 		}
@@ -66,7 +67,7 @@ export const JoinCommand: CommandDefinition = {
 			if (!interaction.replied && !interaction.deferred) {
 				await interaction.reply({
 					content: "エラーが発生しました",
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			} else {
 				await interaction.editReply("エラーが発生しました");

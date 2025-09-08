@@ -45,16 +45,22 @@ export const HistorySearchCommand: CommandDefinition = {
 				daysBack,
 			);
 
-			await replyLongMessage(interaction, searchResult);
+			// 少し遅延を入れて進捗表示が確実に更新されるようにする
+	await new Promise(resolve => setTimeout(resolve, 500));
+	await replyLongMessage(interaction, searchResult);
 
 			logInfo(
 				`History search command executed by ${interaction.user.username}, query: "${query}", days: ${daysBack}`,
 			);
 		} catch (error) {
 			logError(`Error executing history search command: ${error}`);
-			await interaction.editReply({
-				content: "履歴検索中にエラーが発生しました。",
-			});
+			try {
+				await interaction.editReply({
+					content: "履歴検索中にエラーが発生しました。",
+				});
+			} catch (replyError) {
+				logError(`Failed to send error message: ${replyError}`);
+			}
 		}
 	},
 };

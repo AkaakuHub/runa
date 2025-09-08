@@ -92,10 +92,19 @@ function forceSplitMessage(message: string, maxLength: number): string[] {
  * @returns 送信されたメッセージの配列
  */
 export async function sendLongMessage(channel: TextChannel, content: string): Promise<Message[]> {
-	const chunks = splitMessage(content);
+	const chunks = splitMessage(content, 2000);
 	const sentMessages: Message[] = [];
 	
-	for (const chunk of chunks) {
+	// 安全対策：すべてのチャンクが2000文字以内であることを確認
+	const safeChunks = chunks.map(chunk => {
+		if (chunk.length > 2000) {
+			console.log(`[WARNING] Chunk exceeds 2000 characters (${chunk.length}), force splitting`);
+			return chunk.substring(0, 2000);
+		}
+		return chunk;
+	});
+	
+	for (const chunk of safeChunks) {
 		const message = await channel.send(chunk);
 		sentMessages.push(message);
 	}
@@ -110,17 +119,44 @@ export async function sendLongMessage(channel: TextChannel, content: string): Pr
  * @returns Promise<void>
  */
 export async function replyLongMessage(interaction: ChatInputCommandInteraction, content: string): Promise<void> {
-	const chunks = splitMessage(content);
+	const chunks = splitMessage(content, 2000);
 	
-	// 最初のチャンクをeditReplyで送信
-	await interaction.editReply({
-		content: chunks[0],
+	// デバッグ用：各チャンクの長さをログ（console.logを使用）
+	console.log(`[DEBUG] Splitting message into ${chunks.length} chunks`);
+	chunks.forEach((chunk, index) => {
+		console.log(`[DEBUG] Chunk ${index + 1}: ${chunk.length} characters`);
 	});
 	
-	// 残りのチャンクをfollowUpで送信
-	for (let i = 1; i < chunks.length; i++) {
-		await interaction.followUp({
-			content: chunks[i],
+	// 安全対策：すべてのチャンクが2000文字以内であることを確認
+	const safeChunks = chunks.map(chunk => {
+		if (chunk.length > 2000) {
+			console.log(`[WARNING] Chunk exceeds 2000 characters (${chunk.length}), force splitting`);
+			return chunk.substring(0, 2000);
+		}
+		return chunk;
+	});
+	
+	try {
+		// 最初のチャンクをeditReplyで送信（進捗表示を上書き）
+		await interaction.editReply({
+			content: safeChunks[0],
 		});
+		
+		// 残りのチャンクをfollowUpで送信
+		for (let i = 1; i < safeChunks.length; i++) {
+			await interaction.followUp({
+				content: safeChunks[i],
+			});
+		}
+	} catch (error) {
+		console.error(`[ERROR] Failed to send long message: ${error}`);
+		// フォールバック：最初のチャンクのみ送信を試みる
+		try {
+			await interaction.editReply({
+				content: safeChunks[0].substring(0, 2000),
+			});
+		} catch (fallbackError) {
+			console.error(`[ERROR] Fallback also failed: ${fallbackError}`);
+		}
 	}
 }

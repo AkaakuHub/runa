@@ -1,4 +1,4 @@
-import type { ChatInputCommandInteraction } from "discord.js";
+import type { ChatInputCommandInteraction, MessageFlags } from "discord.js";
 import { MusicService } from "../../services/MusicService";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
@@ -20,7 +20,7 @@ export const VolumeCommand: CommandDefinition = {
 		if (!interaction.guild) {
 			await interaction.reply({
 				content: "このコマンドはサーバー内でのみ使用できます",
-				ephemeral: true,
+				flags: MessageFlags.Ephemeral,
 			});
 			return;
 		}
@@ -33,7 +33,7 @@ export const VolumeCommand: CommandDefinition = {
 			if (!musicService.isCurrentlyPlaying()) {
 				await interaction.reply({
 					content: "現在何も再生していません",
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
@@ -48,7 +48,7 @@ export const VolumeCommand: CommandDefinition = {
 			} else {
 				await interaction.reply({
 					content: "音量の設定に失敗しました",
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			}
 		} catch (error) {
@@ -56,7 +56,7 @@ export const VolumeCommand: CommandDefinition = {
 			if (!interaction.replied && !interaction.deferred) {
 				await interaction.reply({
 					content: "音量調整中にエラーが発生しました",
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			} else {
 				await interaction.editReply("音量調整中にエラーが発生しました");
