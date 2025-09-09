@@ -15,7 +15,7 @@ export const registerCommands = (commandsList: CommandDefinition[]): void => {
 /**
  * 登録されたすべてのコマンドを取得する
  */
-export const getCommands = (): CommandDefinition[] => {
+const getCommands = (): CommandDefinition[] => {
 	return commands;
 };
 

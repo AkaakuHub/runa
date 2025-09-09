@@ -1,4 +1,8 @@
-import { type ChatInputCommandInteraction, ChannelType, MessageFlags } from "discord.js";
+import {
+	type ChatInputCommandInteraction,
+	ChannelType,
+	MessageFlags,
+} from "discord.js";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { dailyChannelService } from "../../services/DailyChannelService";
@@ -121,8 +125,10 @@ export const DailyConfigCommand: CommandDefinition = {
 
 					// 投稿用チャンネル
 					if (summaryChannelId) {
-						const summaryChannel = interaction.guild.channels.cache.get(summaryChannelId);
-						const summaryChannelName = summaryChannel?.name || "不明なチャンネル";
+						const summaryChannel =
+							interaction.guild.channels.cache.get(summaryChannelId);
+						const summaryChannelName =
+							summaryChannel?.name || "不明なチャンネル";
 						content += `📢 **投稿チャンネル:** ${summaryChannelName} (${summaryChannelId})\n\n`;
 					} else {
 						content += "📢 **投稿チャンネル:** 未設定\n\n";

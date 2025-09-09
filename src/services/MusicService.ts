@@ -23,7 +23,9 @@ export class MusicService {
 	private queueManager: QueueManager;
 	private currentTextChannel?: TextChannel;
 	private isPlaying = false;
-	private currentResource: { volume?: { setVolume: (volume: number) => void } } | null = null; // 現在再生中のリソース
+	private currentResource: {
+		volume?: { setVolume: (volume: number) => void };
+	} | null = null; // 現在再生中のリソース
 	private currentVolume = 0.1; // デフォルト音量10%
 	private currentPlayingUrl?: string; // 現在再生中のURL
 	private statusMessage?: Message; // ステータス表示用メッセージの参照
@@ -156,7 +158,6 @@ export class MusicService {
 		}
 	}
 
-	
 	public async joinChannel(
 		voiceChannel: VoiceChannel,
 		textChannel: TextChannel,
@@ -213,7 +214,10 @@ export class MusicService {
 					}, 10000);
 
 					// 状態変化の監視
-					const stateChangeHandler = (_oldState: { status: string }, newState: { status: string }) => {
+					const stateChangeHandler = (
+						_oldState: { status: string },
+						newState: { status: string },
+					) => {
 						if (newState.status === "ready") {
 							clearTimeout(timeout);
 							connection.off("stateChange", stateChangeHandler);
@@ -382,7 +386,7 @@ export class MusicService {
 			// まずストリーミングを試みる
 			logInfo(`playNext: ストリーミング再生を試みます: ${nextItem}`);
 			const streamingSuccess = await this.playWithStreaming(nextItem, guildId);
-			
+
 			if (streamingSuccess) {
 				// ストリーミング成功時のイベントハンドリング
 				this.player.once(AudioPlayerStatus.Idle, () => {
@@ -390,13 +394,13 @@ export class MusicService {
 					this.isPlaying = false;
 					this.currentPlayingUrl = undefined;
 					this.retryCount = 0;
-					
+
 					this.updateStatusMessage(
 						`再生完了: ${nextItem}`,
 						0xffaa00,
 						"再生完了",
 					);
-					
+
 					// 少し待ってから次の曲へ（重複呼び出し防止）
 					setTimeout(() => {
 						if (!this.isPlaying) {
@@ -410,12 +414,14 @@ export class MusicService {
 					this.isPlaying = false;
 					this.handleErrorWithRetry();
 				});
-				
+
 				return;
 			}
 
 			// ストリーミング失敗時は従来のダウンロード方式にフォールバック
-			logInfo(`playNext: ストリーミング失敗、ダウンロード方式にフォールバック: ${nextItem}`);
+			logInfo(
+				`playNext: ストリーミング失敗、ダウンロード方式にフォールバック: ${nextItem}`,
+			);
 			await this.updateStatusMessage(
 				"ストリーミングに失敗しました。ダウンロード方式で再生します...",
 				0xffaa00,
@@ -531,8 +537,8 @@ export class MusicService {
 				logInfo(`音量を${level}%に設定しました`);
 				return true;
 			}
-				logError("音量を設定できる再生リソースがありません");
-				return false;
+			logError("音量を設定できる再生リソースがありません");
+			return false;
 		} catch (error) {
 			logError(`音量設定エラー: ${error}`);
 			return false;
@@ -585,18 +591,20 @@ export class MusicService {
 		}
 
 		const guildId = this.currentTextChannel.guild.id;
-		
+
 		if (this.retryCount < this.maxRetries) {
 			this.retryCount++;
-			logInfo(`再生エラー: ${this.retryCount}回目の再試行 - ${this.currentPlayingUrl}`);
-			
+			logInfo(
+				`再生エラー: ${this.retryCount}回目の再試行 - ${this.currentPlayingUrl}`,
+			);
+
 			await this.updateStatusMessage(
 				`再生エラーが発生しました。${this.retryCount}回目の再試行中... (${this.currentPlayingUrl})`,
 				0xffaa00,
 				"再試行中",
 				true,
 			);
-			
+
 			// 少し待ってから再試行
 			setTimeout(() => {
 				this.playNext();
@@ -611,21 +619,24 @@ export class MusicService {
 			"再生失敗",
 			true,
 		);
-		
+
 		// 失敗したURLを記録
 		this.failedUrls.add(this.currentPlayingUrl);
 		this.retryCount = 0;
-		
+
 		// キューから削除して次へ
 		this.queueManager.removeFromQueue(guildId, this.currentPlayingUrl);
 		this.playNext();
 	}
 
 	// ストリーミング再生メソッド
-	private async playWithStreaming(url: string, guildId: string): Promise<boolean> {
+	private async playWithStreaming(
+		url: string,
+		guildId: string,
+	): Promise<boolean> {
 		try {
 			logInfo(`ストリーミング再生開始: ${url}`);
-			
+
 			await this.updateStatusMessage(
 				"ストリーミング再生を準備中...",
 				0xffaa00,
@@ -671,7 +682,7 @@ export class MusicService {
 			// 再生開始
 			this.player.play(resource);
 			logInfo("ストリーミング再生を開始しました");
-			
+
 			return true;
 		} catch (error) {
 			logError(`ストリーミング再生エラー: ${error}`);

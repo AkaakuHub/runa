@@ -25,11 +25,17 @@ export function setupDailySummaryScheduler(client: Client): void {
 				for (const [, guild] of guilds) {
 					try {
 						logInfo(`Processing guild: ${guild.name} (${guild.id})`);
-						const summaryChannelId = dailyChannelService.getSummaryChannel(guild.id);
-						const configuredChannelIds = dailyChannelService.getChannels(guild.id);
-						
+						const summaryChannelId = dailyChannelService.getSummaryChannel(
+							guild.id,
+						);
+						const configuredChannelIds = dailyChannelService.getChannels(
+							guild.id,
+						);
+
 						logInfo(`Summary channel ID: ${summaryChannelId}`);
-						logInfo(`Configured channel IDs: [${configuredChannelIds.join(', ')}]`);
+						logInfo(
+							`Configured channel IDs: [${configuredChannelIds.join(", ")}]`,
+						);
 
 						if (!summaryChannelId) {
 							logInfo(
@@ -46,7 +52,10 @@ export function setupDailySummaryScheduler(client: Client): void {
 						}
 
 						const summaryChannel = guild.channels.cache.get(summaryChannelId);
-						if (!summaryChannel || summaryChannel.type !== ChannelType.GuildText) {
+						if (
+							!summaryChannel ||
+							summaryChannel.type !== ChannelType.GuildText
+						) {
 							logError(
 								`Summary channel ${summaryChannelId} not found or not a text channel in guild ${guild.name}`,
 							);
@@ -61,14 +70,14 @@ export function setupDailySummaryScheduler(client: Client): void {
 							channel: targetChannel,
 							user: { username: "System", displayName: "System" },
 							deferReply: async () => ({ fetchReply: true }),
-							editReply: async () => { },
+							editReply: async () => {},
 						} as unknown as ChatInputCommandInteraction;
 
 						// 全ての対象チャンネルからメッセージを収集してサマリーを生成
 						logInfo(`Generating summary for guild ${guild.name}...`);
 						const summary = await generateDailySummary(
 							mockInteraction,
-							configuredChannelIds
+							configuredChannelIds,
 						);
 						logInfo(`Summary generated, length: ${summary.length} characters`);
 
@@ -92,7 +101,9 @@ export function setupDailySummaryScheduler(client: Client): void {
 						if (summaryWithDate.length <= 2000) {
 							await targetChannel.send(summaryWithDate);
 						} else {
-							logInfo(`Message too long (${summaryWithDate.length} chars), splitting...`);
+							logInfo(
+								`Message too long (${summaryWithDate.length} chars), splitting...`,
+							);
 							const chunks = splitMessage(summaryWithDate, 2000);
 							for (const chunk of chunks) {
 								await targetChannel.send(chunk);

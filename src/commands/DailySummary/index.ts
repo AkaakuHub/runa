@@ -10,13 +10,13 @@ import type { CommandDefinition, MessageData } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { dailyChannelService } from "../../services/DailyChannelService";
 import { HareKeService } from "../../services/HareKeService";
-import { 
-	parseJSTDateRange, 
-	getCurrentJSTDateRange, 
+import {
+	parseJSTDateRange,
+	getCurrentJSTDateRange,
 	getJSTDateForJudgment,
 	getCurrentTimestamp,
 	formatToDetailedJapaneseDate,
-	getTimestamp
+	getTimestamp,
 } from "../../utils/dateUtils";
 
 import { sendLongMessage, replyLongMessage } from "../../utils/messageUtils";
@@ -81,7 +81,7 @@ export const DailySummaryCommand: CommandDefinition = {
 	],
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
 		const startTime = getCurrentTimestamp();
-		
+
 		try {
 			await interaction.deferReply();
 
@@ -95,48 +95,55 @@ export const DailySummaryCommand: CommandDefinition = {
 				return;
 			}
 
-			const summaryChannelId = dailyChannelService.getSummaryChannel(interaction.guild.id);
-			
+			const summaryChannelId = dailyChannelService.getSummaryChannel(
+				interaction.guild.id,
+			);
+
 			// サマリー生成が時間がかかる場合があるのでタイムアウト対策
 			let summary: string;
 			try {
 				// 14分でタイムアウト（Discord の15分制限より少し短く）
 				const timeoutPromise = new Promise<never>((_, reject) => {
-					setTimeout(() => reject(new Error('Generation timeout')), 14 * 60 * 1000);
+					setTimeout(
+						() => reject(new Error("Generation timeout")),
+						14 * 60 * 1000,
+					);
 				});
-				
+
 				summary = await Promise.race([
-					generateDailySummary(
-						interaction,
-						undefined,
-						highlight,
-						dateString,
-					),
-					timeoutPromise
+					generateDailySummary(interaction, undefined, highlight, dateString),
+					timeoutPromise,
 				]);
 			} catch (error) {
 				const elapsed = getCurrentTimestamp() - startTime;
 				logError(`Summary generation failed after ${elapsed}ms: ${error}`);
-				
+
 				if (!interaction.replied && !interaction.deferred) {
 					return; // インタラクションが既に無効
 				}
-				
+
 				let errorMessage = "サマリーの生成中にエラーが発生しました。";
-				
+
 				// エラー種別に応じたメッセージを生成
 				if (error instanceof Error) {
-					if (error.message.includes('503') || error.message.includes('overloaded')) {
-						errorMessage = "🔄 Google AIのサーバーが混雑しています。しばらく時間をおいて再度お試しください。";
-					} else if (error.message.includes('timeout')) {
-						errorMessage = "⏱️ サマリー生成がタイムアウトしました。時間をおいて再度お試しください。";
-					} else if (error.message.includes('API key')) {
-						errorMessage = "🔑 API設定に問題があります。管理者にお問い合わせください。";
+					if (
+						error.message.includes("503") ||
+						error.message.includes("overloaded")
+					) {
+						errorMessage =
+							"🔄 Google AIのサーバーが混雑しています。しばらく時間をおいて再度お試しください。";
+					} else if (error.message.includes("timeout")) {
+						errorMessage =
+							"⏱️ サマリー生成がタイムアウトしました。時間をおいて再度お試しください。";
+					} else if (error.message.includes("API key")) {
+						errorMessage =
+							"🔑 API設定に問題があります。管理者にお問い合わせください。";
 					} else {
-						errorMessage = "❌ サマリーの生成中にエラーが発生しました。時間をおいて再度お試しください。";
+						errorMessage =
+							"❌ サマリーの生成中にエラーが発生しました。時間をおいて再度お試しください。";
 					}
 				}
-				
+
 				try {
 					await interaction.editReply({
 						content: errorMessage,
@@ -149,12 +156,16 @@ export const DailySummaryCommand: CommandDefinition = {
 
 			// 投稿用チャンネルが設定されている場合はそこに投稿
 			if (summaryChannelId) {
-				const summaryChannel = interaction.guild.channels.cache.get(summaryChannelId);
+				const summaryChannel =
+					interaction.guild.channels.cache.get(summaryChannelId);
 				if (summaryChannel && summaryChannel.type === ChannelType.GuildText) {
 					// 統一されたユーティリティを使用して日付を取得
-					const targetDateForDisplay = getJSTDateForJudgment(dateString || undefined);
-					
-					const displayDateString = formatToDetailedJapaneseDate(targetDateForDisplay);
+					const targetDateForDisplay = getJSTDateForJudgment(
+						dateString || undefined,
+					);
+
+					const displayDateString =
+						formatToDetailedJapaneseDate(targetDateForDisplay);
 
 					const summaryWithDate = `# ${displayDateString}のサーバーニュース\n\n${summary}`;
 
@@ -166,7 +177,8 @@ export const DailySummaryCommand: CommandDefinition = {
 					});
 				} else {
 					await interaction.editReply({
-						content: "投稿用チャンネルが見つかりません。設定を確認してください。",
+						content:
+							"投稿用チャンネルが見つかりません。設定を確認してください。",
 					});
 				}
 			} else {
@@ -203,7 +215,7 @@ export async function generateDailySummary(
 		}
 
 		// JST基準で日付範囲を作成（統一されたユーティリティを使用）
-		const { start: jstStartTime, end: jstEndTime } = targetDate 
+		const { start: jstStartTime, end: jstEndTime } = targetDate
 			? parseJSTDateRange(targetDate)
 			: getCurrentJSTDateRange();
 
@@ -211,7 +223,9 @@ export async function generateDailySummary(
 
 		if (targetChannelIds) {
 			// 自動実行の場合：指定されたチャンネルIDsを使用
-			channelIds = Array.isArray(targetChannelIds) ? targetChannelIds : [targetChannelIds];
+			channelIds = Array.isArray(targetChannelIds)
+				? targetChannelIds
+				: [targetChannelIds];
 		} else {
 			// 手動実行の場合：設定されたすべてのチャンネルからメッセージを収集
 			const configuredChannelIds = dailyChannelService.getChannels(guild.id);
@@ -330,17 +344,22 @@ export async function generateDailySummary(
 		}
 
 		// ハレ・ケ判定用の日付を準備（統一されたユーティリティを使用）
-		const targetDateForJudgment = getJSTDateForJudgment(targetDate || undefined);
+		const targetDateForJudgment = getJSTDateForJudgment(
+			targetDate || undefined,
+		);
 
 		// ハレ・ケ判定を実行（メッセージが0件でも実行）
-		const messageDataForHareKe: MessageData[] = todaysMessages.map(msg => ({
+		const messageDataForHareKe: MessageData[] = todaysMessages.map((msg) => ({
 			content: msg.content,
 			author: msg.author,
 			timestamp: msg.timestamp,
-			channel: msg.channel
+			channel: msg.channel,
 		}));
 
-		const hareKeResult = await HareKeService.judge(messageDataForHareKe, targetDateForJudgment);
+		const hareKeResult = await HareKeService.judge(
+			messageDataForHareKe,
+			targetDateForJudgment,
+		);
 
 		// メッセージが0件の場合でもハレ・ケ判定付きで返す
 		if (todaysMessages.length === 0) {
@@ -359,11 +378,15 @@ export async function generateDailySummary(
 		}
 
 		const genAI = new GoogleGenerativeAI(googleApiKey);
-		
+
 		// リトライ機能付きでモデル取得・実行
-		const generateWithRetry = async (prompt: string, maxRetries = 3, fallbackModel = "gemini-1.5-flash"): Promise<string> => {
+		const generateWithRetry = async (
+			prompt: string,
+			maxRetries = 3,
+			fallbackModel = "gemini-1.5-flash",
+		): Promise<string> => {
 			let lastError: unknown;
-			
+
 			// まず優先モデルで試行
 			for (let attempt = 1; attempt <= maxRetries; attempt++) {
 				try {
@@ -373,13 +396,17 @@ export async function generateDailySummary(
 				} catch (error: unknown) {
 					lastError = error;
 					logError(`Attempt ${attempt} with gemini-2.0-flash failed: ${error}`);
-					
+
 					// 503エラー（overloaded）の場合は指数バックオフで待機
-					if (error instanceof Error && (error.message?.includes('503') || error.message?.includes('overloaded'))) {
+					if (
+						error instanceof Error &&
+						(error.message?.includes("503") ||
+							error.message?.includes("overloaded"))
+					) {
 						if (attempt < maxRetries) {
-							const waitTime = Math.min(1000 * (2 ** (attempt - 1)), 8000); // 1s, 2s, 4s, max 8s
+							const waitTime = Math.min(1000 * 2 ** (attempt - 1), 8000); // 1s, 2s, 4s, max 8s
 							logInfo(`Waiting ${waitTime}ms before retry...`);
-							await new Promise(resolve => setTimeout(resolve, waitTime));
+							await new Promise((resolve) => setTimeout(resolve, waitTime));
 						}
 					} else {
 						// 503以外のエラーは即座にフォールバックへ
@@ -387,32 +414,37 @@ export async function generateDailySummary(
 					}
 				}
 			}
-			
+
 			// フォールバックモデルで試行
 			try {
 				logInfo(`Falling back to ${fallbackModel} model`);
-				const fallbackModelInstance = genAI.getGenerativeModel({ model: fallbackModel });
+				const fallbackModelInstance = genAI.getGenerativeModel({
+					model: fallbackModel,
+				});
 				const result = await fallbackModelInstance.generateContent(prompt);
 				return result.response.text();
 			} catch (fallbackError) {
-				logError(`Fallback model ${fallbackModel} also failed: ${fallbackError}`);
+				logError(
+					`Fallback model ${fallbackModel} also failed: ${fallbackError}`,
+				);
 				throw lastError; // 元のエラーを投げる
 			}
 		};
 
 		// メッセージデータを時刻とURL付きで準備
-		const messagesWithMeta = todaysMessages.map((msg) => {
-			const timeString = msg.timestamp.toLocaleString('ja-JP', {
-				hour: '2-digit',
-				minute: '2-digit'
-			});
-			const messageUrl = `https://discord.com/channels/${msg.guildId}/${msg.channelId}/${msg.messageId}`;
-			return `[${timeString}] [${msg.channel}] ${msg.author}: ${msg.content} | URL: ${messageUrl}`;
-		}).join("\n");
+		const messagesWithMeta = todaysMessages
+			.map((msg) => {
+				const timeString = msg.timestamp.toLocaleString("ja-JP", {
+					hour: "2-digit",
+					minute: "2-digit",
+				});
+				const messageUrl = `https://discord.com/channels/${msg.guildId}/${msg.channelId}/${msg.messageId}`;
+				return `[${timeString}] [${msg.channel}] ${msg.author}: ${msg.content} | URL: ${messageUrl}`;
+			})
+			.join("\n");
 
 		// シンプル化した1回のプロンプトで全て処理
-		let prompt =
-			`以下は今日投稿されたメッセージです（時刻とURL付き）。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を15個のトピックとして整理してください。
+		let prompt = `以下は今日投稿されたメッセージです（時刻とURL付き）。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を15個のトピックとして整理してください。
 特に個人のメッセージや発言を重視し、ユーザー同士の会話や個人的な出来事に焦点を当ててください。twitterやXの投稿は背景情報として使用してください。
 できるだけメッセージを多く取り上げ、小さな話題でも見逃さずに拾い上げてください。また、プロの新聞記者の立場として、評論家のような視点で、かつ、ユーモアを交えた、読者を楽しませるような文章を書いてください。
 "はい、承知いたしました。以下に、ご指定の形式で出力します。"のような不要な文章は含めないでください。
@@ -458,7 +490,7 @@ https://discord.com/channels/...
 
 		// 1回のプロンプト実行
 		const summary = await generateWithRetry(prompt);
-		
+
 		// ハレ・ケ判定結果を統合した最終出力を生成
 		return generateFinalOutputWithHareKe(summary, hareKeResult);
 	} catch (error) {
@@ -470,7 +502,10 @@ https://discord.com/channels/...
 /**
  * ハレ・ケ判定結果を統合した最終出力を生成
  */
-function generateFinalOutputWithHareKe(summary: string, hareKeResult: import("../../types").HareKeResult): string {
+function generateFinalOutputWithHareKe(
+	summary: string,
+	hareKeResult: import("../../types").HareKeResult,
+): string {
 	// ハレ・ケ判定ヘッダーを作成
 	const hareKeHeader = `${hareKeResult.emoji} **${hareKeResult.title}** (${hareKeResult.score}%)
 ┌─ 判定理由 ─────────────────┐
@@ -490,8 +525,8 @@ function generateFinalOutputWithHareKe(summary: string, hareKeResult: import("..
 ${hareKeResult.message}`;
 
 	// サマリーがニュースヘッダーで始まる場合は、その前にハレ・ケ判定を挿入
-	if (summary.includes('📰 **今日のサーバーニュース**')) {
-		return `${summary.replace('📰 **今日のサーバーニュース**', `${hareKeHeader}📰 **今日のサーバーニュース**`)}${hareKeFooter}`;
+	if (summary.includes("📰 **今日のサーバーニュース**")) {
+		return `${summary.replace("📰 **今日のサーバーニュース**", `${hareKeHeader}📰 **今日のサーバーニュース**`)}${hareKeFooter}`;
 	}
 	// ニュースヘッダーがない場合は単純に前後に追加
 	return `${hareKeHeader}${summary}${hareKeFooter}`;

@@ -2,7 +2,7 @@ import type { ChatInputCommandInteraction } from "discord.js";
 
 export type IYAKind = "寝る！" | "起きる！" | "遊ぶ！" | "ご飯を食べる！";
 
-export interface CommandOption {
+interface CommandOption {
 	name: string;
 	description: string;
 	type:
@@ -34,7 +34,14 @@ export interface CommandDefinition {
 export interface HareKeResult {
 	isHare: boolean;
 	score: number;
-	level: 'dai-hare' | 'hare' | 'yaya-hare' | 'neutral' | 'yaya-ke' | 'ke' | 'dai-ke';
+	level:
+		| "dai-hare"
+		| "hare"
+		| "yaya-hare"
+		| "neutral"
+		| "yaya-ke"
+		| "ke"
+		| "dai-ke";
 	emoji: string;
 	title: string;
 	breakdown: {

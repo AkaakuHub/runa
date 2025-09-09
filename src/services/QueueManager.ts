@@ -24,13 +24,15 @@ export class QueueManager {
 		}
 
 		const queue = this.queues.get(guildId) ?? [];
-		
+
 		// 重複チェック
 		if (queue.includes(url)) {
-			logInfo(`重複URLを検出、キューに追加しません: ${url}, ギルド: ${guildId}`);
+			logInfo(
+				`重複URLを検出、キューに追加しません: ${url}, ギルド: ${guildId}`,
+			);
 			return queue.length;
 		}
-		
+
 		queue.push(url);
 
 		logInfo(`キューに追加: ${url}, ギルド: ${guildId}, 位置: ${queue.length}`);
@@ -47,12 +49,12 @@ export class QueueManager {
 		}
 
 		const nextItem = queue.shift();
-		
+
 		// 履歴に追加
 		if (nextItem) {
 			this.addToHistory(guildId, nextItem);
 		}
-		
+
 		return nextItem;
 	}
 
@@ -101,7 +103,9 @@ export class QueueManager {
 		if (clearHistory) {
 			this.queueHistory.set(guildId, []);
 		}
-		logInfo(`キューをクリア: ギルド ${guildId}${clearHistory ? ' (履歴もクリア)' : ''}`);
+		logInfo(
+			`キューをクリア: ギルド ${guildId}${clearHistory ? " (履歴もクリア)" : ""}`,
+		);
 	}
 
 	/**
@@ -136,7 +140,7 @@ export class QueueManager {
 		}
 
 		const queue = this.queues.get(guildId) || [];
-		
+
 		// 履歴の最新の項目からキューに追加（重複を避ける）
 		for (let i = history.length - 1; i >= 0; i--) {
 			const url = history[i];
@@ -153,10 +157,15 @@ export class QueueManager {
 	/**
 	 * キューの状態を取得（デバッグ用）
 	 */
-	public getQueueStatus(guildId: string): { queue: string[]; history: string[]; queueLength: number; historyLength: number } {
+	public getQueueStatus(guildId: string): {
+		queue: string[];
+		history: string[];
+		queueLength: number;
+		historyLength: number;
+	} {
 		const queue = this.queues.get(guildId) || [];
 		const history = this.queueHistory.get(guildId) || [];
-		
+
 		return {
 			queue,
 			history,

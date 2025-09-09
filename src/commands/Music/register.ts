@@ -137,5 +137,3 @@ export const RegisterCommand: CommandDefinition = {
 		}
 	},
 };
-
-export default RegisterCommand;

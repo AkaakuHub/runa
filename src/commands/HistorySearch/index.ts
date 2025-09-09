@@ -8,7 +8,13 @@ import {
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
-import { getJSTDateRangeFromDaysBack, formatToJapaneseDate, formatToJapaneseTime, getDaysDifference, getTimestamp } from "../../utils/dateUtils";
+import {
+	getJSTDateRangeFromDaysBack,
+	formatToJapaneseDate,
+	formatToJapaneseTime,
+	getDaysDifference,
+	getTimestamp,
+} from "../../utils/dateUtils";
 import { replyLongMessage } from "../../utils/messageUtils";
 
 export const HistorySearchCommand: CommandDefinition = {
@@ -46,8 +52,8 @@ export const HistorySearchCommand: CommandDefinition = {
 			);
 
 			// 少し遅延を入れて進捗表示が確実に更新されるようにする
-	await new Promise(resolve => setTimeout(resolve, 500));
-	await replyLongMessage(interaction, searchResult);
+			await new Promise((resolve) => setTimeout(resolve, 500));
+			await replyLongMessage(interaction, searchResult);
 
 			logInfo(
 				`History search command executed by ${interaction.user.username}, query: "${query}", days: ${daysBack}`,
@@ -85,7 +91,8 @@ async function performHistorySearch(
 		const textChannel = currentChannel as TextChannel;
 
 		// 検索範囲の日付を計算
-		const { start: startDate, end: endDate } = getJSTDateRangeFromDaysBack(daysBack);
+		const { start: startDate, end: endDate } =
+			getJSTDateRangeFromDaysBack(daysBack);
 
 		// メッセージを取得（進捗表示付き）
 		const messages = await fetchMessagesInDateRange(
@@ -107,11 +114,15 @@ async function performHistorySearch(
 		}
 
 		const genAI = new GoogleGenerativeAI(googleApiKey);
-		
+
 		// リトライ機能付きでモデル取得・実行
-		const generateWithRetry = async (prompt: string, maxRetries = 3, fallbackModel = "gemini-1.5-flash"): Promise<string> => {
+		const generateWithRetry = async (
+			prompt: string,
+			maxRetries = 3,
+			fallbackModel = "gemini-1.5-flash",
+		): Promise<string> => {
 			let lastError: unknown;
-			
+
 			// まず優先モデルで試行
 			for (let attempt = 1; attempt <= maxRetries; attempt++) {
 				try {
@@ -121,13 +132,17 @@ async function performHistorySearch(
 				} catch (error: unknown) {
 					lastError = error;
 					logError(`Attempt ${attempt} with gemini-2.0-flash failed: ${error}`);
-					
+
 					// 503エラー（overloaded）の場合は指数バックオフで待機
-					if (error instanceof Error && (error.message?.includes('503') || error.message?.includes('overloaded'))) {
+					if (
+						error instanceof Error &&
+						(error.message?.includes("503") ||
+							error.message?.includes("overloaded"))
+					) {
 						if (attempt < maxRetries) {
-							const waitTime = Math.min(1000 * (2 ** (attempt - 1)), 8000); // 1s, 2s, 4s, max 8s
+							const waitTime = Math.min(1000 * 2 ** (attempt - 1), 8000); // 1s, 2s, 4s, max 8s
 							logInfo(`Waiting ${waitTime}ms before retry...`);
-							await new Promise(resolve => setTimeout(resolve, waitTime));
+							await new Promise((resolve) => setTimeout(resolve, waitTime));
 						}
 					} else {
 						// 503以外のエラーは即座にフォールバックへ
@@ -135,15 +150,19 @@ async function performHistorySearch(
 					}
 				}
 			}
-			
+
 			// フォールバックモデルで試行
 			try {
 				logInfo(`Falling back to ${fallbackModel} model`);
-				const fallbackModelInstance = genAI.getGenerativeModel({ model: fallbackModel });
+				const fallbackModelInstance = genAI.getGenerativeModel({
+					model: fallbackModel,
+				});
 				const result = await fallbackModelInstance.generateContent(prompt);
 				return result.response.text();
 			} catch (fallbackError) {
-				logError(`Fallback model ${fallbackModel} also failed: ${fallbackError}`);
+				logError(
+					`Fallback model ${fallbackModel} also failed: ${fallbackError}`,
+				);
 				throw lastError; // 元のエラーを投げる
 			}
 		};
@@ -251,7 +270,7 @@ async function fetchMessagesInDateRange(
 			if (lastProgressDate !== messageDate) {
 				lastProgressDate = messageDate;
 				const daysAgo = getDaysDifference(endDate, message.createdAt);
-				
+
 				// 進捗表示を更新（あまり頻繁にならないよう調整）
 				if (daysAgo !== currentDay) {
 					currentDay = daysAgo;
@@ -293,7 +312,9 @@ async function fetchMessagesInDateRange(
 	});
 
 	// 時系列順にソート
-	messages.sort((a, b) => getTimestamp(a.timestamp) - getTimestamp(b.timestamp));
+	messages.sort(
+		(a, b) => getTimestamp(a.timestamp) - getTimestamp(b.timestamp),
+	);
 
 	return messages;
 }

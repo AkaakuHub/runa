@@ -35,7 +35,9 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	const bufoPattern = /[ﾌﾞブぶ][ﾎホほ][ｫォおぉ]+[ｯッっ]?/i;
 
 	if (kokePattern.test(message.content) || bufoPattern.test(message.content)) {
-		await message.reply("💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡");
+		await message.reply(
+			"💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡",
+		);
 		// がああパターンも含む場合は、この後の処理を継続しない
 		if (hasGoosePattern) {
 			return;
