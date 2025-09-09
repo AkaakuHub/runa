@@ -1,0 +1,10 @@
+{
+  "ignoreDependencies": [
+    "@discordjs/opus",
+    "ffmpeg-static",
+    "libsodium-wrappers",
+    "opusscript",
+    "prism-media",
+    "prettier"
+  ]
+}
