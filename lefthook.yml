@@ -1,0 +1,9 @@
+pre-commit:
+    parallel: true
+    jobs:
+        - run: pnpm format
+          glob: "*.{js,ts,jsx,tsx}"
+        - run: pnpm lint
+          glob: "*.{js,ts,jsx,tsx,json,md,yml}"
+        - run: pnpm knip
+          glob: "*.{js,ts,jsx,tsx}"
