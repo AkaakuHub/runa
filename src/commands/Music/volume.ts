@@ -1,4 +1,5 @@
-import type { ChatInputCommandInteraction, MessageFlags } from "discord.js";
+import type { ChatInputCommandInteraction } from "discord.js";
+import { MessageFlags } from "discord.js";
 import { MusicService } from "../../services/MusicService";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";

@@ -16,7 +16,7 @@ import {
 	type VoiceChannel,
 } from "discord.js";
 import { logError, logInfo } from "../../src/utils/logger";
-import { downloadYoutubeAudio } from "../utils/youtubeUtils";
+import { downloadYoutubeAudio, streamYoutubeAudio } from "../utils/youtubeUtils";
 import { QueueManager } from "./QueueManager";
 
 export class MusicService {
@@ -25,13 +25,16 @@ export class MusicService {
 	private queueManager: QueueManager;
 	private currentTextChannel?: TextChannel;
 	private isPlaying = false;
-	private currentResource: any; // 現在再生中のリソース
+	private currentResource: { volume?: { setVolume: (volume: number) => void } } | null = null; // 現在再生中のリソース
 	private currentVolume = 0.2; // デフォルト音量20%
 	private currentPlayingUrl?: string; // 現在再生中のURL
 	private statusMessage?: Message; // ステータス表示用メッセージの参照
+	private retryCount = 0; // 再試行カウンター
+	private maxRetries = 3; // 最大再試行回数
 
 	// ダウンロード中のURLを管理するマップを追加
 	private downloadingUrls: Map<string, Promise<string | null>> = new Map();
+	private failedUrls: Set<string> = new Set(); // 失敗したURLを記録
 
 	private constructor() {
 		this.player = createAudioPlayer({
@@ -50,6 +53,7 @@ export class MusicService {
 		this.player.on(AudioPlayerStatus.Idle, () => {
 			logInfo("プレイヤー状態: アイドル状態");
 			this.isPlaying = false;
+			this.retryCount = 0; // 再試行カウンターをリセット
 			this.playNext();
 		});
 
@@ -68,7 +72,7 @@ export class MusicService {
 		this.player.on("error", (error) => {
 			logError(`音声再生エラー: ${error.message}`);
 			this.isPlaying = false;
-			this.playNext();
+			this.handleErrorWithRetry();
 		});
 	}
 
@@ -105,11 +109,12 @@ export class MusicService {
 			logInfo(
 				`ボイスチャンネル「${voiceChannel.name}」にはボットだけが残っているため、自動退出します`,
 			);
-			this.leaveChannel(guildId);
+			// 自動退出時もキューを保持する
+			this.leaveChannel(guildId, false);
 
 			if (this.currentTextChannel) {
 				this.updateStatusMessage(
-					"ボイスチャンネルに誰もいなくなったため、自動退出しました",
+					"ボイスチャンネルに誰もいなくなったため、自動退出しました。キューは保持されています。",
 					0xffaa00,
 					"自動退出",
 				);
@@ -230,7 +235,7 @@ export class MusicService {
 					}, 10000);
 
 					// 状態変化の監視
-					const stateChangeHandler = (oldState: any, newState: any) => {
+					const stateChangeHandler = (_oldState: { status: string }, newState: { status: string }) => {
 						if (newState.status === "ready") {
 							clearTimeout(timeout);
 							connection.off("stateChange", stateChangeHandler);
@@ -279,7 +284,7 @@ export class MusicService {
 		}
 	}
 
-	public leaveChannel(guildId: string): boolean {
+	public leaveChannel(guildId: string, clearQueue = false): boolean {
 		try {
 			const connection = getVoiceConnection(guildId);
 			if (connection) {
@@ -287,7 +292,11 @@ export class MusicService {
 				this.player.stop(true); // 再生を停止し、リソースを強制的に破棄
 				connection.destroy();
 				this.isPlaying = false;
-				this.queueManager.clearQueue(guildId); // キューもクリア
+				// キューをクリアするオプションを追加
+				if (clearQueue) {
+					this.queueManager.clearQueue(guildId);
+					this.failedUrls.clear(); // 失敗記録もクリア
+				}
 				this.currentTextChannel = undefined; // テキストチャンネルもクリア
 				return true;
 			}
@@ -358,7 +367,13 @@ export class MusicService {
 		}
 
 		const guildId = this.currentTextChannel.guild.id;
-		const nextItem = this.queueManager.getNextInQueue(guildId);
+		let nextItem = this.queueManager.getNextInQueue(guildId);
+
+		// 失敗したURLをスキップして有効な次のアイテムを探す
+		while (nextItem && this.failedUrls.has(nextItem)) {
+			logInfo(`失敗したURLをスキップ: ${nextItem}`);
+			nextItem = this.queueManager.getNextInQueue(guildId);
+		}
 
 		// ボイスチャンネルへの接続を確認
 		const connection = getVoiceConnection(guildId);
@@ -392,8 +407,46 @@ export class MusicService {
 
 		try {
 			this.isPlaying = true;
+
+			// まずストリーミングを試みる
+			logInfo(`playNext: ストリーミング再生を試みます: ${nextItem}`);
+			const streamingSuccess = await this.playWithStreaming(nextItem, guildId);
+			
+			if (streamingSuccess) {
+				// ストリーミング成功時のイベントハンドリング
+				this.player.once(AudioPlayerStatus.Idle, () => {
+					logInfo("playNext: ストリーミング再生完了");
+					this.isPlaying = false;
+					this.currentPlayingUrl = undefined;
+					this.retryCount = 0;
+					
+					this.updateStatusMessage(
+						`再生完了: ${nextItem}`,
+						0xffaa00,
+						"再生完了",
+					);
+					
+					// 少し待ってから次の曲へ（重複呼び出し防止）
+					setTimeout(() => {
+						if (!this.isPlaying) {
+							this.playNext();
+						}
+					}, 1000);
+				});
+
+				this.player.once("error", (error) => {
+					logError(`playNext: ストリーミング再生エラー: ${error.message}`);
+					this.isPlaying = false;
+					this.handleErrorWithRetry();
+				});
+				
+				return;
+			}
+
+			// ストリーミング失敗時は従来のダウンロード方式にフォールバック
+			logInfo(`playNext: ストリーミング失敗、ダウンロード方式にフォールバック: ${nextItem}`);
 			await this.updateStatusMessage(
-				"音声ファイルをダウンロード中...",
+				"ストリーミングに失敗しました。ダウンロード方式で再生します...",
 				0xffaa00,
 				"準備中",
 			);
@@ -425,8 +478,7 @@ export class MusicService {
 					"エラー",
 				);
 				this.isPlaying = false;
-				this.queueManager.removeFromQueue(guildId, nextItem);
-				this.playNext();
+				this.handleErrorWithRetry();
 				return;
 			}
 
@@ -447,6 +499,7 @@ export class MusicService {
 					"エラー",
 				);
 				this.isPlaying = false;
+				this.handleErrorWithRetry();
 				return;
 			}
 
@@ -461,6 +514,7 @@ export class MusicService {
 				);
 				this.isPlaying = false;
 				fs.unlinkSync(audioFilePath);
+				this.handleErrorWithRetry();
 				return;
 			}
 
@@ -496,6 +550,7 @@ export class MusicService {
 					"エラー",
 				);
 				this.isPlaying = false;
+				this.handleErrorWithRetry();
 				return;
 			}
 
@@ -522,6 +577,7 @@ export class MusicService {
 				logInfo("playNext: AudioPlayerStatus.Idle イベント発生");
 				this.isPlaying = false;
 				this.currentPlayingUrl = undefined;
+				this.retryCount = 0;
 
 				// 再生完了メッセージの更新
 				this.updateStatusMessage(
@@ -538,8 +594,12 @@ export class MusicService {
 				} catch (error) {
 					logError(`playNext: 一時ファイル削除エラー: ${error}`);
 				}
-				// 次の曲へ
-				this.playNext();
+				// 少し待ってから次の曲へ（重複呼び出し防止）
+				setTimeout(() => {
+					if (!this.isPlaying) {
+						this.playNext();
+					}
+				}, 1000);
 			});
 
 			// エラーハンドリングを追加
@@ -563,7 +623,7 @@ export class MusicService {
 				} catch (unlinkError) {
 					logError(`playNext: エラー後のファイル削除エラー: ${unlinkError}`);
 				}
-				this.playNext();
+				this.handleErrorWithRetry();
 			});
 		} catch (error) {
 			logError(`playNext: 再生エラー全体: ${error}`);
@@ -573,7 +633,7 @@ export class MusicService {
 				"エラー",
 			);
 			this.isPlaying = false;
-			this.playNext();
+			this.handleErrorWithRetry();
 		}
 	}
 
@@ -595,10 +655,9 @@ export class MusicService {
 				this.currentVolume = normalizedVolume; // 現在の音量を保存
 				logInfo(`音量を${level}%に設定しました`);
 				return true;
-			} else {
+			}
 				logError("音量を設定できる再生リソースがありません");
 				return false;
-			}
 		} catch (error) {
 			logError(`音量設定エラー: ${error}`);
 			return false;
@@ -615,13 +674,13 @@ export class MusicService {
 		return this.queueManager.getQueue(guildId) || [];
 	}
 
-	public async processQueue(guildId: string): Promise<void> {
+	public async processQueue(): Promise<void> {
 		if (this.isPlaying) return;
 
 		await this.playNext();
 	}
 
-	public skip(guildId: string): boolean {
+	public skip(): boolean {
 		if (!this.isPlaying) return false;
 
 		// 現在の再生を停止すると自動的に次の曲へ
@@ -641,5 +700,107 @@ export class MusicService {
 	// テキストチャンネルを更新するメソッド
 	public updateTextChannel(textChannel: TextChannel): void {
 		this.currentTextChannel = textChannel;
+	}
+
+	// エラーハンドリングと再試行メソッド
+	private async handleErrorWithRetry(): Promise<void> {
+		if (!this.currentTextChannel || !this.currentPlayingUrl) {
+			this.playNext();
+			return;
+		}
+
+		const guildId = this.currentTextChannel.guild.id;
+		
+		if (this.retryCount < this.maxRetries) {
+			this.retryCount++;
+			logInfo(`再生エラー: ${this.retryCount}回目の再試行 - ${this.currentPlayingUrl}`);
+			
+			await this.updateStatusMessage(
+				`再生エラーが発生しました。${this.retryCount}回目の再試行中... (${this.currentPlayingUrl})`,
+				0xffaa00,
+				"再試行中",
+				true,
+			);
+			
+			// 少し待ってから再試行
+			setTimeout(() => {
+				this.playNext();
+			}, 2000 * this.retryCount); // 再試行回数に応じて待機時間を増やす
+			return;
+		}
+
+		logError(`最大再試行回数に達しました: ${this.currentPlayingUrl}`);
+		await this.updateStatusMessage(
+			`再生エラー: ${this.currentPlayingUrl} の再生に失敗しました。次の曲に進みます。`,
+			0xff0000,
+			"再生失敗",
+			true,
+		);
+		
+		// 失敗したURLを記録
+		this.failedUrls.add(this.currentPlayingUrl);
+		this.retryCount = 0;
+		
+		// キューから削除して次へ
+		this.queueManager.removeFromQueue(guildId, this.currentPlayingUrl);
+		this.playNext();
+	}
+
+	// ストリーミング再生メソッド
+	private async playWithStreaming(url: string, guildId: string): Promise<boolean> {
+		try {
+			logInfo(`ストリーミング再生開始: ${url}`);
+			
+			await this.updateStatusMessage(
+				"ストリーミング再生を準備中...",
+				0xffaa00,
+				"準備中",
+			);
+
+			// YouTubeストリームを取得（ffmpeg経由でwav形式に変換）
+			const stream = await streamYoutubeAudio(url);
+			if (!stream) {
+				logError(`ストリーム取得失敗: ${url}`);
+				return false;
+			}
+
+			// @discordjs/voiceが自動的にffmpegで変換するので、inputTypeを指定しない
+			const resource = createAudioResource(stream, {
+				inlineVolume: true,
+			});
+
+			// 現在のリソースとURLを保存
+			this.currentResource = resource;
+			this.currentPlayingUrl = url;
+
+			// 音量設定
+			if (this.currentResource?.volume) {
+				this.currentResource.volume.setVolume(this.currentVolume);
+			}
+
+			const connection = getVoiceConnection(guildId);
+			if (!connection) {
+				logError("ストリーミング再生中にボイス接続が失われました");
+				return false;
+			}
+
+			// プレイヤーを接続にサブスクライブ
+			connection.subscribe(this.player);
+
+			await this.updateStatusMessage(
+				`ストリーミング再生開始: ${url}`,
+				0x00ff00,
+				"再生中",
+			);
+
+			// 再生開始
+			this.player.play(resource);
+			logInfo("ストリーミング再生を開始しました");
+			
+			return true;
+		} catch (error) {
+			logError(`ストリーミング再生エラー: ${error}`);
+			return false;
+		}
 	}
 }

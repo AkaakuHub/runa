@@ -1,10 +1,10 @@
 import type {
 	ChatInputCommandInteraction,
 	GuildMember,
-	MessageFlags,
 	TextChannel,
 	VoiceChannel,
 } from "discord.js";
+import { MessageFlags } from "discord.js";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { MusicService } from "../../services/MusicService";
@@ -35,7 +35,7 @@ export const JoinCommand: CommandDefinition = {
 			}
 
 			// ボットの権限を確認
-			const permissions = voiceChannel.permissionsFor(interaction.client.user!);
+			const permissions = voiceChannel.permissionsFor(interaction.client.user);
 			if (!permissions?.has("Connect") || !permissions?.has("Speak")) {
 				await interaction.editReply(
 					"ボイスチャンネルへの接続権限または発言権限がありません",

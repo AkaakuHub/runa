@@ -5,7 +5,8 @@ import {
 	type TextChannel,
 	type ChatInputCommandInteraction,
 } from "discord.js";
-import { generateDailySummary, splitMessage } from "../commands/DailySummary";
+import { generateDailySummary } from "../commands/DailySummary";
+import { splitMessage } from "./messageUtils";
 import { logInfo, logError } from "./logger";
 import { dailyChannelService } from "../services/DailyChannelService";
 import { getCurrentJSTDateString } from "./dateUtils";

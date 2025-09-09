@@ -107,7 +107,7 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		}
 
 		// キューの処理を開始（再生中でなければ再生開始）
-		await musicService.processQueue(message.guild.id);
+		await musicService.processQueue();
 
 		logInfo(
 			`YouTube URL検出: ${message.content}, サーバー: ${message.guild.name}`,

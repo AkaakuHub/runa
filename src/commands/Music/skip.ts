@@ -20,7 +20,7 @@ export const SkipCommand: CommandDefinition = {
 				return;
 			}
 
-			const skipped = musicService.skip(interaction.guild.id);
+			const skipped = musicService.skip();
 
 			if (skipped) {
 				await interaction.reply("現在の曲をスキップしました");
