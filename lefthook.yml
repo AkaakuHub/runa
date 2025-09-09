@@ -3,7 +3,12 @@ pre-commit:
     jobs:
         - run: pnpm format
           glob: "*.{js,ts,jsx,tsx}"
+          stage_fixed: true
+
         - run: pnpm lint
           glob: "*.{js,ts,jsx,tsx,json,md,yml}"
+          stage_fixed: true
+
         - run: pnpm knip
           glob: "*.{js,ts,jsx,tsx}"
+          stage_fixed: true
