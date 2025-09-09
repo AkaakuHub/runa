@@ -1,8 +1,6 @@
-import * as fs from "node:fs";
 import {
 	type AudioPlayer,
 	AudioPlayerStatus,
-	StreamType,
 	createAudioPlayer,
 	createAudioResource,
 	getVoiceConnection,
@@ -16,7 +14,7 @@ import {
 	type VoiceChannel,
 } from "discord.js";
 import { logError, logInfo } from "../../src/utils/logger";
-import { downloadYoutubeAudio, streamYoutubeAudio } from "../utils/youtubeUtils";
+import { streamYoutubeAudio } from "../utils/youtubeUtils";
 import { QueueManager } from "./QueueManager";
 
 export class MusicService {
@@ -26,14 +24,12 @@ export class MusicService {
 	private currentTextChannel?: TextChannel;
 	private isPlaying = false;
 	private currentResource: { volume?: { setVolume: (volume: number) => void } } | null = null; // 現在再生中のリソース
-	private currentVolume = 0.2; // デフォルト音量20%
+	private currentVolume = 0.1; // デフォルト音量10%
 	private currentPlayingUrl?: string; // 現在再生中のURL
 	private statusMessage?: Message; // ステータス表示用メッセージの参照
 	private retryCount = 0; // 再試行カウンター
 	private maxRetries = 3; // 最大再試行回数
 
-	// ダウンロード中のURLを管理するマップを追加
-	private downloadingUrls: Map<string, Promise<string | null>> = new Map();
 	private failedUrls: Set<string> = new Set(); // 失敗したURLを記録
 
 	private constructor() {
@@ -160,25 +156,7 @@ export class MusicService {
 		}
 	}
 
-	// 新しいメソッド: バックグラウンドでYouTube音声をダウンロード
-	private async downloadInBackground(
-		url: string,
-		guildId: string,
-	): Promise<string | null> {
-		try {
-			logInfo(`バックグラウンドダウンロード開始: ${url}`);
-			const audioFilePath = await downloadYoutubeAudio(url, guildId);
-			logInfo(`バックグラウンドダウンロード完了: ${url}`);
-			return audioFilePath;
-		} catch (error) {
-			logError(`バックグラウンドダウンロードエラー: ${error}`);
-			return null;
-		} finally {
-			// ダウンロード完了後、マップから削除
-			this.downloadingUrls.delete(url);
-		}
-	}
-
+	
 	public async joinChannel(
 		voiceChannel: VoiceChannel,
 		textChannel: TextChannel,
@@ -338,13 +316,6 @@ export class MusicService {
 					true,
 				);
 			}
-
-			// バックグラウンドでダウンロード開始 (すでにダウンロード中でなければ)
-			if (!this.downloadingUrls.has(url)) {
-				const downloadPromise = this.downloadInBackground(url, guildId);
-				this.downloadingUrls.set(url, downloadPromise);
-			}
-
 			return ""; // 実際のメッセージはすでに送信済みなので空文字を返す
 		} catch (error) {
 			logError(`キュー追加エラー: ${error}`);
@@ -451,73 +422,6 @@ export class MusicService {
 				"準備中",
 			);
 
-			// YouTube音声をダウンロード
-			let audioFilePath: string | null = null;
-
-			// すでにダウンロード中または完了済みかチェック
-			const downloadingPromise = this.downloadingUrls.get(nextItem);
-			if (downloadingPromise) {
-				// ダウンロード中または完了済みの場合はその結果を待機
-				logInfo(`playNext: 既存のダウンロードを使用: ${nextItem}`);
-				audioFilePath = await downloadingPromise;
-			} else {
-				// まだダウンロードされていない場合は新規ダウンロード開始
-				logInfo(`playNext: 新規ダウンロード開始: ${nextItem}`);
-				await this.updateStatusMessage(
-					"音声ファイルをダウンロード中...",
-					0xffaa00,
-					"準備中",
-				);
-				audioFilePath = await downloadYoutubeAudio(nextItem, guildId);
-			}
-
-			if (!audioFilePath) {
-				await this.updateStatusMessage(
-					"音声ダウンロードに失敗しました",
-					0xff0000,
-					"エラー",
-				);
-				this.isPlaying = false;
-				this.handleErrorWithRetry();
-				return;
-			}
-
-			// ステータス更新
-			await this.updateStatusMessage(
-				"音声ファイルを検証中...",
-				0xffaa00,
-				"準備中",
-			);
-
-			logInfo(`playNext: 音声ファイルのパス: ${audioFilePath}`);
-
-			// ファイルの存在確認とサイズ確認
-			if (!fs.existsSync(audioFilePath)) {
-				await this.updateStatusMessage(
-					"音声ファイルが見つかりません",
-					0xff0000,
-					"エラー",
-				);
-				this.isPlaying = false;
-				this.handleErrorWithRetry();
-				return;
-			}
-
-			const stats = fs.statSync(audioFilePath);
-			logInfo(`playNext: ファイルサイズ: ${stats.size} バイト`);
-
-			if (stats.size === 0) {
-				await this.updateStatusMessage(
-					"ダウンロードしたファイルが空です",
-					0xff0000,
-					"エラー",
-				);
-				this.isPlaying = false;
-				fs.unlinkSync(audioFilePath);
-				this.handleErrorWithRetry();
-				return;
-			}
-
 			// ステータス更新
 			await this.updateStatusMessage(
 				"音声リソースを準備中...",
@@ -525,16 +429,6 @@ export class MusicService {
 				"準備中",
 			);
 
-			// 音声リソースを作成
-			logInfo("playNext: 音声リソースを作成中...");
-			const resource = createAudioResource(audioFilePath, {
-				inputType: StreamType.Arbitrary,
-				inlineVolume: true,
-			});
-			logInfo("playNext: 音声リソース作成完了");
-
-			// 現在のリソースとURLを保存
-			this.currentResource = resource;
 			this.currentPlayingUrl = nextItem;
 
 			// プレイヤーが接続に正しくサブスクライブされていることを確認 (再サブスクライブ)
@@ -568,8 +462,6 @@ export class MusicService {
 			);
 
 			// 再生開始
-			logInfo("playNext: player.play(resource) を呼び出します");
-			this.player.play(resource);
 			logInfo("playNext: 音声の再生を開始しました");
 
 			// 再生終了後にファイルを削除するため、ステータス監視
@@ -585,15 +477,6 @@ export class MusicService {
 					0xffaa00, // オレンジ色
 					"再生完了",
 				);
-
-				try {
-					if (fs.existsSync(audioFilePath)) {
-						fs.unlinkSync(audioFilePath);
-						logInfo(`playNext: 一時ファイルを削除しました: ${audioFilePath}`);
-					}
-				} catch (error) {
-					logError(`playNext: 一時ファイル削除エラー: ${error}`);
-				}
 				// 少し待ってから次の曲へ（重複呼び出し防止）
 				setTimeout(() => {
 					if (!this.isPlaying) {
@@ -615,14 +498,6 @@ export class MusicService {
 					0xff0000,
 					"エラー",
 				);
-
-				try {
-					if (fs.existsSync(audioFilePath)) {
-						fs.unlinkSync(audioFilePath);
-					}
-				} catch (unlinkError) {
-					logError(`playNext: エラー後のファイル削除エラー: ${unlinkError}`);
-				}
 				this.handleErrorWithRetry();
 			});
 		} catch (error) {

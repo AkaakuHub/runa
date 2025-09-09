@@ -19,7 +19,7 @@ import {
 	getTimestamp
 } from "../../utils/dateUtils";
 
-import { splitMessage, sendLongMessage, replyLongMessage } from "../../utils/messageUtils";
+import { sendLongMessage, replyLongMessage } from "../../utils/messageUtils";
 
 // Twitter/X URL検出とコンテンツ取得のヘルパー関数
 function extractTwitterUrls(content: string): string[] {
