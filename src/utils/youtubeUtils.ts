@@ -58,3 +58,69 @@ export function isValidYoutubeUrl(url: string): boolean {
 	const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/;
 	return youtubeRegex.test(url);
 }
+
+/**
+ * YouTube URLをサニタイズして不要なパラメータを削除
+ * @param url YouTube URL
+ * @returns サニタイズされたURL
+ */
+export function sanitizeYoutubeUrl(url: string): string {
+	try {
+		const urlObj = new URL(url);
+
+		// YouTube関連のドメインのみ処理
+		if (
+			!urlObj.hostname.includes("youtube.com") &&
+			!urlObj.hostname.includes("youtu.be")
+		) {
+			return url;
+		}
+
+		// 削除するパラメータのリスト
+		const paramsToRemove = [
+			"list", // プレイリストパラメータ
+			"start_radio", // ラジオ開始パラメータ
+			"index", // インデックスパラメータ
+			"pp", // プレイリストパラメータ
+			"t", // 時間パラメータ
+			"feature", // 機能パラメータ
+			"ab_channel", // チャンネルパラメータ
+			"utm_source", // UTMパラメータ
+			"utm_medium", // UTMパラメータ
+			"utm_campaign", // UTMパラメータ
+			"utm_term", // UTMパラメータ
+			"utm_content", // UTMパラメータ
+			"fbclid", // Facebookパラメータ
+			"gclid", // Googleパラメータ
+			"feature", // 機能パラメータ
+			"lc", // コメントパラメータ
+			"continue", // 続行パラメータ
+			"hl", // 言語パラメータ
+		];
+
+		// URLSearchParamsを使用して安全にパラメータを操作
+		const searchParams = new URLSearchParams(urlObj.search);
+
+		// 削除対象のパラメータを削除
+		for (const param of paramsToRemove) {
+			searchParams.delete(param);
+		}
+
+		// クリーンな検索パラメータを再構築
+		urlObj.search = searchParams.toString();
+
+		// サニタイズされたURLを返す
+		const sanitizedUrl = urlObj.toString();
+
+		// 元のURLと変更がある場合のみログ
+		if (sanitizedUrl !== url) {
+			logInfo(`YouTube URLサニタイズ: ${url} -> ${sanitizedUrl}`);
+		}
+
+		return sanitizedUrl;
+	} catch (error) {
+		// URLパースに失敗した場合は元のURLを返す
+		logError(`YouTube URLサニタイズエラー: ${url}, エラー: ${error}`);
+		return url;
+	}
+}

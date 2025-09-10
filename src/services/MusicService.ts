@@ -14,7 +14,7 @@ import {
 	type VoiceChannel,
 } from "discord.js";
 import { logError, logInfo } from "../../src/utils/logger";
-import { streamYoutubeAudio } from "../utils/youtubeUtils";
+import { streamYoutubeAudio, sanitizeYoutubeUrl } from "../utils/youtubeUtils";
 import { QueueManager } from "./QueueManager";
 
 export class MusicService {
@@ -297,9 +297,12 @@ export class MusicService {
 				return "有効なYouTube URLではありません";
 			}
 
+			// URLをサニタイズ
+			const sanitizedUrl = sanitizeYoutubeUrl(url);
+
 			// キューに追加
-			const queuePosition = this.queueManager.addToQueue(url, guildId);
-			const truncatedUrl = url.replace("https://", "");
+			const queuePosition = this.queueManager.addToQueue(sanitizedUrl, guildId);
+			const truncatedUrl = sanitizedUrl.replace("https://", "");
 
 			// 埋め込みメッセージを作成 (常に新しいメッセージを作成)
 			let statusText: string;
