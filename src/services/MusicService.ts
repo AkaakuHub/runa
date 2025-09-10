@@ -576,6 +576,26 @@ export class MusicService {
 		return this.isPlaying;
 	}
 
+	// 音楽を一時停止
+	public pauseMusic(): boolean {
+		if (this.isPlaying) {
+			this.player.pause();
+			logInfo("音楽を一時停止しました");
+			return true;
+		}
+		return false;
+	}
+
+	// 音楽を再開
+	public resumeMusic(): boolean {
+		if (this.player.state.status === AudioPlayerStatus.Paused) {
+			this.player.unpause();
+			logInfo("音楽を再開しました");
+			return true;
+		}
+		return false;
+	}
+
 	// 現在のテキストチャンネルIDを取得するメソッド
 	public getCurrentTextChannelId(): string | undefined {
 		return this.currentTextChannel?.id;

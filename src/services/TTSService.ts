@@ -480,6 +480,17 @@ export class TTSService {
 				return false;
 			}
 
+			// MusicServiceを取得して現在の再生状態を確認
+			const { MusicService } = await import("../services/MusicService");
+			const musicService = MusicService.getInstance();
+			const wasMusicPlaying = musicService.isCurrentlyPlaying();
+
+			// 音楽が再生中の場合は一時停止
+			if (wasMusicPlaying) {
+				logInfo("TTS: 音楽を一時停止します");
+				musicService.pauseMusic();
+			}
+
 			const resource = createAudioResource(audioFile, {
 				inlineVolume: true,
 			});
@@ -488,47 +499,25 @@ export class TTSService {
 				resource.volume.setVolume(this.config.volume);
 			}
 
-			// TTS用の一時的なAudioPlayerを作成
-			const ttsPlayer = createAudioPlayer({
-				behaviors: {
-					noSubscriber: NoSubscriberBehavior.Play,
-					maxMissedFrames: 50,
-				},
-			});
-
-			// TTSプレイヤーをサブスクライブ（既存のサブスクリプションは維持）
-			connection.subscribe(ttsPlayer);
-			ttsPlayer.play(resource);
+			// TTS用に独自のAudioPlayerを使用
+			connection.subscribe(this.player);
+			this.player.play(resource);
 			this.isPlaying = true;
 			this.currentAudioFile = audioFile;
 
 			logInfo("TTS音声の再生を開始しました");
 
-			// TTS再生完了を待機
-			await new Promise<void>((resolve) => {
-				const finishHandler = () => {
-					ttsPlayer.stop();
-					ttsPlayer.off(AudioPlayerStatus.Idle, finishHandler);
-					ttsPlayer.off("error", errorHandler);
-					resolve();
-				};
+			// 再生完了を待機
+			const result = await this.waitForPlaybackComplete();
 
-				const errorHandler = () => {
-					ttsPlayer.stop();
-					ttsPlayer.off(AudioPlayerStatus.Idle, finishHandler);
-					ttsPlayer.off("error", errorHandler);
-					resolve();
-				};
+			// TTS再生終了後に音楽を再開
+			if (wasMusicPlaying) {
+				logInfo("TTS: 音楽を再開します");
+				await new Promise((resolve) => setTimeout(resolve, 500)); // 少し待ってから再開
+				musicService.resumeMusic();
+			}
 
-				ttsPlayer.on(AudioPlayerStatus.Idle, finishHandler);
-				ttsPlayer.on("error", errorHandler);
-			});
-
-			// TTSプレイヤーを破棄
-			ttsPlayer.stop();
-			this.isPlaying = false;
-
-			return true;
+			return result;
 		} catch (error) {
 			logError(`音声再生エラー: ${error}`);
 			return false;
