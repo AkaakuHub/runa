@@ -259,6 +259,8 @@ main() {
     log_info "Latest Voicevox version: ${version}"
     
     download_voicevox "$os" "$version"
+
+    mkdir -p tts-cache
     
     log_info "Voicevox environment setup completed!"
     log_info "You can now start Voicevox with: npm run voicevox:start"
