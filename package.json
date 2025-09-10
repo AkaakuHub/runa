@@ -11,7 +11,14 @@
     "reset": "tsx src/deploy-commands.ts --reset-global",
     "lint": "pnpm biome lint --apply ./src",
     "format": "pnpm biome format --write ./src",
-    "knip": "knip"
+    "knip": "knip",
+    "voicevox:setup": "./scripts/setup-voicevox.sh",
+    "voicevox:start": "./scripts/start-voicevox.sh start",
+    "voicevox:start:host": "./scripts/start-voicevox.sh start --host",
+    "voicevox:stop": "./scripts/start-voicevox.sh stop",
+    "voicevox:status": "./scripts/start-voicevox.sh status",
+    "voicevox:restart": "./scripts/start-voicevox.sh restart",
+    "start:full": "concurrently \"pnpm run voicevox:start\" \"pnpm start\""
   },
   "dependencies": {
     "@discordjs/opus": "^0.10.0",
@@ -36,6 +43,7 @@
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@eslint/js": "^9.24.0",
+    "concurrently": "^9.2.1",
     "eslint": "^9.24.0",
     "globals": "^16.0.0",
     "knip": "^5.63.1",
