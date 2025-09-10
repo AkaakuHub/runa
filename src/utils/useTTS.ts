@@ -4,7 +4,7 @@ import {
 	type VoiceConnection,
 } from "@discordjs/voice";
 import type { GuildMember, Message, VoiceChannel } from "discord.js";
-import { MusicService } from "../services/MusicService";
+import { ChannelRegistryService } from "../services/ChannelRegistryService";
 import { TTSService } from "../services/TTSService";
 import { logError, logInfo } from "../utils/logger";
 
@@ -26,25 +26,15 @@ export async function handleTTS(message: Message): Promise<void> {
 	}
 	logInfo("TTS: TTS機能が有効です");
 
-	// ボットがこのサーバーのボイスチャンネルに接続しているか確認
-	const connection = getVoiceConnection(message.guild.id);
-	if (!connection) {
-		logInfo("TTS: ボットはこのサーバーのボイスチャンネルに接続していません");
+	// チャンネル登録サービスを取得
+	const channelRegistry = ChannelRegistryService.getInstance();
+
+	// このチャンネルが登録されているか確認
+	if (!channelRegistry.isRegistered(message.guild.id, message.channelId)) {
+		logInfo(`TTS: このチャンネル ${message.channelId} は登録されていません`);
 		return;
 	}
-
-	// MusicServiceから現在のテキストチャンネルを取得
-	const musicService = MusicService.getInstance();
-	const currentTextChannelId = musicService.getCurrentTextChannelId();
-
-	// /joinが実行されたチャンネルかどうかを確認
-	if (message.channelId !== currentTextChannelId) {
-		logInfo(
-			`TTS: このチャンネル ${message.channelId} は/joinが実行されたチャンネルではありません`,
-		);
-		return;
-	}
-	logInfo(`TTS: 正しいチャンネル ${message.channelId} を監視しています`);
+	logInfo(`TTS: 登録済みチャンネル ${message.channelId} を監視しています`);
 
 	// コマンドメッセージは無視（スラッシュコマンド）
 	if (message.content.startsWith("/")) return;

@@ -406,19 +406,25 @@ export class TTSService {
 	): Promise<VoiceConnection | null> {
 		try {
 			const existingConnection = getVoiceConnection(voiceChannel.guild.id);
+
+			// 同じチャンネルに既に接続していればそれを利用
 			if (
 				existingConnection &&
 				existingConnection.joinConfig.channelId === voiceChannel.id
 			) {
+				logInfo("TTS: 既存のボイス接続を利用します");
 				return existingConnection;
 			}
 
-			// 既存の接続があれば切断
+			// 別のチャンネルに接続済みの場合は何もしない（干渉しない）
 			if (existingConnection) {
-				existingConnection.destroy();
-				await new Promise((resolve) => setTimeout(resolve, 1000));
+				logInfo(
+					`TTS: 別のチャンネルに接続済みのため、TTSは実行しません (current: ${existingConnection.joinConfig.channelId}, requested: ${voiceChannel.id})`,
+				);
+				return null;
 			}
 
+			// 新規接続
 			const connection = joinVoiceChannel({
 				channelId: voiceChannel.id,
 				guildId: voiceChannel.guild.id,
@@ -440,6 +446,7 @@ export class TTSService {
 					if (newState.status === "ready") {
 						clearTimeout(timeout);
 						connection.off("stateChange", stateChangeHandler);
+						logInfo("TTS: ボイス接続の準備完了");
 						resolve();
 					}
 				};
@@ -447,10 +454,9 @@ export class TTSService {
 				connection.on("stateChange", stateChangeHandler);
 			});
 
-			// this.currentTextChannel = textChannel; // 未使用のためコメントアウト
 			return connection;
 		} catch (error) {
-			logError(`ボイスチャンネル接続エラー: ${error}`);
+			logError(`TTSボイスチャンネル接続エラー: ${error}`);
 			return null;
 		}
 	}
