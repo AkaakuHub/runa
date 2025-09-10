@@ -1,8 +1,4 @@
-import {
-	getVoiceConnection,
-	joinVoiceChannel,
-	type VoiceConnection,
-} from "@discordjs/voice";
+import { getVoiceConnection } from "@discordjs/voice";
 import type {
 	GuildMember,
 	Message,
@@ -12,10 +8,10 @@ import type {
 import { IyaResponse } from "../response/Iya";
 import { ChannelRegistryService } from "../services/ChannelRegistryService";
 import { MusicService } from "../services/MusicService";
-import { TTSService } from "../services/TTSService";
 import type { IYAKind } from "../types";
-import { logError, logInfo } from "../utils/logger";
 import { isValidYoutubeUrl } from "../utils/youtubeUtils";
+import { handleTTS } from "../utils/useTTS";
+import { logInfo } from "../utils/logger";
 
 const iyaHandler = (message: Message, kind: IYAKind): void => {
 	logInfo(`Iya! trigger detected from ${message.author.username}`);
@@ -124,154 +120,3 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		);
 	}
 };
-
-/**
- * TTS機能の処理
- */
-async function handleTTS(message: Message): Promise<void> {
-	// サーバー内のメッセージのみ処理
-	if (!message.guild) return;
-
-	// TTSサービスを取得
-	const ttsService = TTSService.getInstance();
-
-	// TTSが有効か確認
-	const ttsEnabled = ttsService.isEnabled();
-	if (!ttsEnabled) {
-		logInfo("TTS: TTS機能が無効です");
-		return;
-	}
-	logInfo("TTS: TTS機能が有効です");
-
-	// ボットがこのサーバーのボイスチャンネルに接続しているか確認
-	const connection = getVoiceConnection(message.guild.id);
-	if (!connection) {
-		logInfo("TTS: ボットはこのサーバーのボイスチャンネルに接続していません");
-		return;
-	}
-
-	// MusicServiceから現在のテキストチャンネルを取得
-	const musicService = MusicService.getInstance();
-	const currentTextChannelId = musicService.getCurrentTextChannelId();
-
-	// /joinが実行されたチャンネルかどうかを確認
-	if (message.channelId !== currentTextChannelId) {
-		logInfo(
-			`TTS: このチャンネル ${message.channelId} は/joinが実行されたチャンネルではありません`,
-		);
-		return;
-	}
-	logInfo(`TTS: 正しいチャンネル ${message.channelId} を監視しています`);
-
-	// コマンドメッセージは無視（スラッシュコマンド）
-	if (message.content.startsWith("/")) return;
-
-	// メンバーがボイスチャンネルにいるか確認
-	const member = message.member as GuildMember;
-	const voiceChannel = member?.voice.channel as VoiceChannel;
-
-	if (!voiceChannel) {
-		logInfo(
-			`TTS: ユーザー ${message.author.username} はボイスチャンネルにいません`,
-		);
-		return;
-	}
-	logInfo(
-		`TTS: ユーザー ${message.author.username} はボイスチャンネル ${voiceChannel.name} にいます`,
-	);
-
-	// ボイス接続の状態を確認
-	const existingConnection = getVoiceConnection(message.guild.id);
-	const currentVoiceChannelId = existingConnection?.joinConfig.channelId;
-
-	// 接続が存在しない場合、または接続先が別のチャンネルである場合のみ接続処理を実行
-	if (!existingConnection || currentVoiceChannelId !== voiceChannel.id) {
-		// TTS用に接続
-		const connection = await connectToVoiceChannelForTTS(voiceChannel);
-		if (!connection) {
-			return;
-		}
-	}
-
-	// TTSで読み上げ
-	try {
-		await ttsService.speak(message.content, voiceChannel);
-		logInfo(`TTS読み上げ: ${message.content}, サーバー: ${message.guild.name}`);
-	} catch (error) {
-		logError(`TTS処理エラー: ${error}`);
-	}
-}
-
-/**
- * TTS用にボイスチャンネルに接続
- */
-async function connectToVoiceChannelForTTS(
-	voiceChannel: VoiceChannel,
-): Promise<VoiceConnection | null> {
-	try {
-		const existingConnection = getVoiceConnection(voiceChannel.guild.id);
-		if (
-			existingConnection &&
-			existingConnection.joinConfig.channelId === voiceChannel.id
-		) {
-			return existingConnection;
-		}
-
-		// 既存の接続があれば切断
-		if (existingConnection) {
-			existingConnection.destroy();
-			// 接続が完全に破棄されるまで少し待機
-			await new Promise((resolve) => setTimeout(resolve, 1000));
-		}
-
-		const connection = joinVoiceChannel({
-			channelId: voiceChannel.id,
-			guildId: voiceChannel.guild.id,
-			adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-			selfDeaf: true,
-			selfMute: false,
-		});
-
-		// 接続状態が準備完了するまで待機（タイムアウト付き）
-		let ready = false;
-		try {
-			await new Promise<void>((resolve, reject) => {
-				// 接続タイムアウト（10秒）
-				const timeout = setTimeout(() => {
-					reject(new Error("ボイス接続のタイムアウト"));
-				}, 10000);
-
-				// 状態変化の監視
-				const stateChangeHandler = (
-					_oldState: { status: string },
-					newState: { status: string },
-				) => {
-					if (newState.status === "ready") {
-						clearTimeout(timeout);
-						connection.off("stateChange", stateChangeHandler);
-						logInfo("TTS用ボイス接続の準備完了");
-						ready = true;
-						resolve();
-					}
-				};
-
-				connection.on("stateChange", stateChangeHandler);
-			});
-		} catch (error) {
-			logError(`TTS接続タイムアウト: ${error}`);
-			// 接続に失敗した場合は破棄
-			connection.destroy();
-			return null;
-		}
-
-		if (!ready) {
-			connection.destroy();
-			return null;
-		}
-
-		return connection;
-	} catch (error) {
-		logError(`TTSボイスチャンネル接続エラー: ${error}`);
-		return null;
-	}
-}
