@@ -10,11 +10,11 @@ export const TTSSpeedCommand: CommandDefinition = {
 	options: [
 		{
 			name: "speed",
-			description: "速度 (0.5-2.0)",
+			description: "速度 (0.5-5.0)",
 			type: "NUMBER",
 			required: true,
 			min_value: 0.5,
-			max_value: 2.0,
+			max_value: 5.0,
 		},
 	],
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
