@@ -48,6 +48,46 @@ get_latest_version() {
     echo "$version"
 }
 
+# Download with resume capability
+download_with_resume() {
+    local url="$1"
+    local output="$2"
+    
+    log_info "Starting download: $url"
+    
+    if command -v curl &> /dev/null; then
+        # Check if file exists for resume
+        if [[ -f "$output" ]]; then
+            log_info "Resuming download with curl..."
+            curl -L -C - -o "$output" "$url"
+        else
+            log_info "Starting new download with curl..."
+            curl -L -o "$output" "$url"
+        fi
+    elif command -v wget &> /dev/null; then
+        # Check if file exists for resume
+        if [[ -f "$output" ]]; then
+            log_info "Resuming download with wget..."
+            wget -c -O "$output" "$url"
+        else
+            log_info "Starting new download with wget..."
+            wget -O "$output" "$url"
+        fi
+    else
+        log_error "Neither curl nor wget is available. Please install one of them."
+        exit 1
+    fi
+    
+    # Verify download completed successfully
+    if [[ $? -eq 0 ]]; then
+        local file_size=$(stat -f%z "$output" 2>/dev/null || stat -c%s "$output" 2>/dev/null || echo "0")
+        log_info "Download completed successfully: $output (${file_size} bytes)"
+    else
+        log_error "Download failed"
+        exit 1
+    fi
+}
+
 # Detect OS
 detect_os() {
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -104,14 +144,34 @@ download_voicevox() {
     mkdir -p "$VOICEVOX_DIR"
     cd "$VOICEVOX_DIR"
     
-    # Download the archive
-    if command -v curl &> /dev/null; then
-        curl -L -o "$archive_name" "$download_url"
-    elif command -v wget &> /dev/null; then
-        wget -O "$archive_name" "$download_url"
+    # Check if archive already exists and is complete
+    if [[ -f "$archive_name" ]]; then
+        local file_size=$(stat -f%z "$archive_name" 2>/dev/null || stat -c%s "$archive_name" 2>/dev/null || echo "0")
+        if [[ $file_size -gt 0 ]]; then
+            log_info "Archive already exists: $archive_name (${file_size} bytes)"
+            log_info "Checking if download is complete..."
+            
+            # Try to get expected size from GitHub API
+            local expected_size=""
+            if command -v curl &> /dev/null; then
+                expected_size=$(curl -sI "$download_url" | grep -i content-length | awk '{print $2}' | tr -d '\r')
+            elif command -v wget &> /dev/null; then
+                expected_size=$(wget --spider --server-response "$download_url" 2>&1 | grep -i content-length | awk '{print $2}' | tr -d '\r')
+            fi
+            
+            if [[ -n "$expected_size" && "$file_size" -eq "$expected_size" ]]; then
+                log_info "Download is complete, skipping download..."
+            else
+                log_info "Download is incomplete or size mismatch, resuming download..."
+                download_with_resume "$download_url" "$archive_name"
+            fi
+        else
+            log_info "Archive exists but is empty, re-downloading..."
+            download_with_resume "$download_url" "$archive_name"
+        fi
     else
-        log_error "Neither curl nor wget is available. Please install one of them."
-        exit 1
+        # Download the archive
+        download_with_resume "$download_url" "$archive_name"
     fi
     
     # Extract the archive
@@ -122,7 +182,7 @@ download_voicevox() {
         elif command -v 7zz &> /dev/null; then
             7zz x "$archive_name"
         else
-            log_error "7z is not available. Please install it first: brew install p7zip"
+            log_error "7z is not available. Please install it."
             exit 1
         fi
     elif [[ "$archive_name" == *.zip ]]; then
