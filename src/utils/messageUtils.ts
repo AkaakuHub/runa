@@ -151,13 +151,8 @@ export async function replyLongMessage(
 	});
 
 	try {
-		// 最初のチャンクをeditReplyで送信（進捗表示を上書き）
-		await interaction.editReply({
-			content: safeChunks[0],
-		});
-
-		// 残りのチャンクをfollowUpで送信
-		for (let i = 1; i < safeChunks.length; i++) {
+		// チャンクをfollowUpで送信
+		for (let i = 0; i < safeChunks.length; i++) {
 			await interaction.followUp({
 				content: safeChunks[i],
 			});
