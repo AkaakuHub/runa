@@ -488,15 +488,47 @@ export class TTSService {
 				resource.volume.setVolume(this.config.volume);
 			}
 
-			connection.subscribe(this.player);
-			this.player.play(resource);
+			// TTS用の一時的なAudioPlayerを作成
+			const ttsPlayer = createAudioPlayer({
+				behaviors: {
+					noSubscriber: NoSubscriberBehavior.Play,
+					maxMissedFrames: 50,
+				},
+			});
+
+			// TTSプレイヤーをサブスクライブ（既存のサブスクリプションは維持）
+			connection.subscribe(ttsPlayer);
+			ttsPlayer.play(resource);
 			this.isPlaying = true;
 			this.currentAudioFile = audioFile;
 
 			logInfo("TTS音声の再生を開始しました");
 
-			// 再生完了を待機
-			return await this.waitForPlaybackComplete();
+			// TTS再生完了を待機
+			await new Promise<void>((resolve) => {
+				const finishHandler = () => {
+					ttsPlayer.stop();
+					ttsPlayer.off(AudioPlayerStatus.Idle, finishHandler);
+					ttsPlayer.off("error", errorHandler);
+					resolve();
+				};
+
+				const errorHandler = () => {
+					ttsPlayer.stop();
+					ttsPlayer.off(AudioPlayerStatus.Idle, finishHandler);
+					ttsPlayer.off("error", errorHandler);
+					resolve();
+				};
+
+				ttsPlayer.on(AudioPlayerStatus.Idle, finishHandler);
+				ttsPlayer.on("error", errorHandler);
+			});
+
+			// TTSプレイヤーを破棄
+			ttsPlayer.stop();
+			this.isPlaying = false;
+
+			return true;
 		} catch (error) {
 			logError(`音声再生エラー: ${error}`);
 			return false;
