@@ -10,13 +10,7 @@ import {
 } from "@discordjs/voice";
 import type { VoiceChannel } from "discord.js";
 import { logError, logInfo } from "../utils/logger";
-import {
-	existsSync,
-	mkdirSync,
-	readdirSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 interface TTSConfig {
@@ -41,9 +35,9 @@ export class TTSService {
 	private static instance: TTSService;
 	private config: TTSConfig;
 	private player: AudioPlayer;
-	private cacheDir: string;
 	private voiceCharacters: VoiceCharacter[] = [];
 	private isPlaying = false;
+	private currentAudioFile: string | null = null;
 
 	private constructor() {
 		this.player = createAudioPlayer({
@@ -52,12 +46,6 @@ export class TTSService {
 				maxMissedFrames: 50,
 			},
 		});
-
-		// キャッシュディレクトリの設定
-		this.cacheDir = join(process.cwd(), "tts-cache");
-		if (!existsSync(this.cacheDir)) {
-			mkdirSync(this.cacheDir, { recursive: true });
-		}
 
 		// デフォルト設定
 		this.config = {
@@ -81,6 +69,12 @@ export class TTSService {
 		this.player.on(AudioPlayerStatus.Idle, () => {
 			logInfo("TTSプレイヤー状態: アイドル状態");
 			this.isPlaying = false;
+
+			// 再生終了後に音声ファイルを削除
+			if (this.currentAudioFile) {
+				this.cleanupAudioFile(this.currentAudioFile);
+				this.currentAudioFile = null;
+			}
 		});
 
 		this.player.on(AudioPlayerStatus.Buffering, () => {
@@ -90,6 +84,12 @@ export class TTSService {
 		this.player.on("error", (error) => {
 			logError(`TTS音声再生エラー: ${error.message}`);
 			this.isPlaying = false;
+
+			// エラー時にも音声ファイルを削除
+			if (this.currentAudioFile) {
+				this.cleanupAudioFile(this.currentAudioFile);
+				this.currentAudioFile = null;
+			}
 		});
 	}
 
@@ -119,6 +119,20 @@ export class TTSService {
 		} catch (error) {
 			logError(`音声キャラクター取得エラー: ${error}`);
 			return [];
+		}
+	}
+
+	/**
+	 * 音声ファイルをクリーンアップ
+	 */
+	private cleanupAudioFile(audioFile: string): void {
+		try {
+			if (existsSync(audioFile)) {
+				rmSync(audioFile);
+				logInfo(`音声ファイルを削除しました: ${audioFile}`);
+			}
+		} catch (error) {
+			logError(`音声ファイル削除エラー: ${error}`);
 		}
 	}
 
@@ -279,18 +293,13 @@ export class TTSService {
 	 */
 	private async generateAudio(text: string): Promise<string | null> {
 		try {
-			// キャッシュファイル名を生成
-			const cacheKey = `${text}_${this.config.speaker}_${this.config.speed}_${this.config.pitch}`;
-			const hash = Buffer.from(cacheKey)
-				.toString("base64")
-				.replace(/[^a-zA-Z0-9]/g, "");
-			const cacheFile = join(this.cacheDir, `${hash}.wav`);
-
-			// キャッシュが存在する場合はそれを使用
-			if (existsSync(cacheFile)) {
-				logInfo("キャッシュされた音声ファイルを使用します");
-				return cacheFile;
-			}
+			// 一時ファイル名を生成（タイムスタンプベース）
+			const timestamp = Date.now();
+			const tempFile = join(
+				process.cwd(),
+				"tts-cache",
+				`tts-temp-${timestamp}.wav`,
+			);
 
 			// 音声クエリを作成
 			const params = new URLSearchParams();
@@ -336,11 +345,11 @@ export class TTSService {
 
 			const audioData = await synthesisResponse.arrayBuffer();
 
-			// ファイルに保存
-			writeFileSync(cacheFile, Buffer.from(audioData));
-			logInfo(`音声ファイルを生成しました: ${cacheFile}`);
+			// 一時ファイルに保存
+			writeFileSync(tempFile, Buffer.from(audioData));
+			logInfo(`音声ファイルを生成しました: ${tempFile}`);
 
-			return cacheFile;
+			return tempFile;
 		} catch (error) {
 			logError(`音声生成エラー: ${error}`);
 			return null;
@@ -434,6 +443,7 @@ export class TTSService {
 			connection.subscribe(this.player);
 			this.player.play(resource);
 			this.isPlaying = true;
+			this.currentAudioFile = audioFile;
 
 			logInfo("TTS音声の再生を開始しました");
 			return true;
@@ -453,7 +463,13 @@ export class TTSService {
 				this.player.stop(true);
 				connection.destroy();
 				this.isPlaying = false;
-				// this.currentTextChannel = undefined; // 未使用のため削除
+
+				// 切断時に音声ファイルを削除
+				if (this.currentAudioFile) {
+					this.cleanupAudioFile(this.currentAudioFile);
+					this.currentAudioFile = null;
+				}
+
 				logInfo("TTS用ボイスチャンネルから切断しました");
 				return true;
 			}
@@ -469,22 +485,5 @@ export class TTSService {
 	 */
 	public isCurrentlyPlaying(): boolean {
 		return this.isPlaying;
-	}
-
-	/**
-	 * キャッシュをクリア
-	 */
-	public clearCache(): void {
-		try {
-			if (existsSync(this.cacheDir)) {
-				const files = readdirSync(this.cacheDir);
-				for (const file of files) {
-					rmSync(join(this.cacheDir, file));
-				}
-				logInfo("TTSキャッシュをクリアしました");
-			}
-		} catch (error) {
-			logError(`キャッシュクリアエラー: ${error}`);
-		}
 	}
 }
