@@ -12,6 +12,7 @@ import { DailySummaryCommand } from "./DailySummary";
 import { DailyConfigCommand } from "./DailyConfig";
 import { HistorySearchCommand } from "./HistorySearch";
 import CcSorryCommand from "./CcSorry";
+import { TTSCommand } from "./TTS";
 
 // すべての公開するコマンドの一覧
 const commandsList: CommandDefinition[] = [
@@ -27,6 +28,7 @@ const commandsList: CommandDefinition[] = [
 	VolumeCommand,
 	ListCommand,
 	RegisterCommand,
+	TTSCommand,
 ];
 
 // コマンドを登録
