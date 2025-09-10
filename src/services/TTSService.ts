@@ -236,21 +236,29 @@ export class TTSService {
 			return false;
 		}
 
+		// 長いテキストを分割
+		const textChunks = this.splitText(processedText, 30);
+
 		try {
-			// 音声ファイルを生成
-			const audioFile = await this.generateAudio(processedText);
-			if (!audioFile) {
-				return false;
+			// 分割されたテキストを順番に再生
+			for (const chunk of textChunks) {
+				// 音声ファイルを生成
+				const audioFile = await this.generateAudio(chunk);
+				if (!audioFile) {
+					continue;
+				}
+
+				// ボイスチャンネルに接続
+				const connection = await this.connectToVoiceChannel(voiceChannel);
+				if (!connection) {
+					return false;
+				}
+
+				// 音声を再生（前の音声が終わるのを待つ）
+				await this.playAudioAndWait(audioFile, voiceChannel.guild.id);
 			}
 
-			// ボイスチャンネルに接続
-			const connection = await this.connectToVoiceChannel(voiceChannel);
-			if (!connection) {
-				return false;
-			}
-
-			// 音声を再生
-			return await this.playAudio(audioFile, voiceChannel.guild.id);
+			return true;
 		} catch (error) {
 			logError(`TTS再生エラー: ${error}`);
 			return false;
@@ -261,8 +269,8 @@ export class TTSService {
 	 * テキストの前処理
 	 */
 	private preprocessText(text: string): string {
-		// URLを除去
-		let processed = text.replace(/https?:\/\/[^\s]+/g, "");
+		// URLを除去（www付きも含む）
+		let processed = text.replace(/(https?:\/\/\S+)|(www\.\S+)/g, "");
 
 		// メンションを除去
 		processed = processed.replace(/<@!?[0-9]+>/g, "");
@@ -280,12 +288,46 @@ export class TTSService {
 			return "";
 		}
 
-		// 長すぎるテキストは制限
-		if (processed.length > 200) {
-			processed = `${processed.substring(0, 200)}…`;
+		return processed;
+	}
+
+	/**
+	 * 長いテキストを分割する
+	 */
+	private splitText(text: string, maxLength = 30): string[] {
+		const chunks: string[] = [];
+
+		// 句読点や改行で分割を試みる
+		const sentences = text.split(/[。！？.!?\n]+/);
+
+		for (const sentence of sentences) {
+			if (!sentence.trim()) continue;
+
+			if (sentence.length <= maxLength) {
+				chunks.push(sentence.trim());
+			} else {
+				// 長い文はさらに単語で分割
+				const words = sentence.split(/\s+/);
+				let currentChunk = "";
+
+				for (const word of words) {
+					if (currentChunk.length + word.length + 1 <= maxLength) {
+						currentChunk += (currentChunk ? " " : "") + word;
+					} else {
+						if (currentChunk) {
+							chunks.push(currentChunk.trim());
+						}
+						currentChunk = word;
+					}
+				}
+
+				if (currentChunk) {
+					chunks.push(currentChunk.trim());
+				}
+			}
 		}
 
-		return processed;
+		return chunks.filter((chunk) => chunk.length > 0);
 	}
 
 	/**
@@ -414,16 +456,16 @@ export class TTSService {
 	}
 
 	/**
-	 * 音声を再生
+	 * 音声を再生（再生完了を待機）
 	 */
-	private async playAudio(
+	private async playAudioAndWait(
 		audioFile: string,
 		guildId: string,
 	): Promise<boolean> {
 		try {
-			if (this.isPlaying) {
-				logInfo("TTS再生中のため、新しい音声は再生しません");
-				return false;
+			// 前の音声が終わるのを待つ
+			while (this.isPlaying) {
+				await new Promise((resolve) => setTimeout(resolve, 100));
 			}
 
 			const connection = getVoiceConnection(guildId);
@@ -446,11 +488,29 @@ export class TTSService {
 			this.currentAudioFile = audioFile;
 
 			logInfo("TTS音声の再生を開始しました");
-			return true;
+
+			// 再生完了を待機
+			return await this.waitForPlaybackComplete();
 		} catch (error) {
 			logError(`音声再生エラー: ${error}`);
 			return false;
 		}
+	}
+
+	/**
+	 * 再生完了を待機
+	 */
+	private async waitForPlaybackComplete(): Promise<boolean> {
+		return new Promise((resolve) => {
+			const checkCompletion = () => {
+				if (!this.isPlaying) {
+					resolve(true);
+				} else {
+					setTimeout(checkCompletion, 100);
+				}
+			};
+			checkCompletion();
+		});
 	}
 
 	/**
