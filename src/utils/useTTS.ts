@@ -6,6 +6,7 @@ import {
 import type { GuildMember, Message, VoiceChannel } from "discord.js";
 import { ChannelRegistryService } from "../services/ChannelRegistryService";
 import { TTSService } from "../services/TTSService";
+import { TTSQueue } from "../services/TTSQueue";
 import { logError, logInfo } from "../utils/logger";
 
 /**
@@ -31,7 +32,6 @@ export async function handleTTS(message: Message): Promise<void> {
 
 	// このチャンネルが登録されているか確認
 	if (!channelRegistry.isRegistered(message.guild.id, message.channelId)) {
-		logInfo(`TTS: このチャンネル ${message.channelId} は登録されていません`);
 		return;
 	}
 	logInfo(`TTS: 登録済みチャンネル ${message.channelId} を監視しています`);
@@ -66,10 +66,16 @@ export async function handleTTS(message: Message): Promise<void> {
 		}
 	}
 
-	// TTSで読み上げ
+	// TTSキューの状態をログ
+	const ttsQueue = TTSQueue.getInstance();
+	logInfo(`TTSキュー状態: 待機中=${ttsQueue.getQueueLength()}`);
+
+	// TTSで読み上げ（キューに追加）
 	try {
 		await ttsService.speak(message.content, voiceChannel);
-		logInfo(`TTS読み上げ: ${message.content}, サーバー: ${message.guild.name}`);
+		logInfo(
+			`TTS読み上げキューに追加: ${message.content}, サーバー: ${message.guild.name}`,
+		);
 	} catch (error) {
 		logError(`TTS処理エラー: ${error}`);
 	}

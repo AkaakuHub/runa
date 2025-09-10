@@ -18,7 +18,7 @@
     "voicevox:stop": "./scripts/start-voicevox.sh stop",
     "voicevox:status": "./scripts/start-voicevox.sh status",
     "voicevox:restart": "./scripts/start-voicevox.sh restart",
-    "start:full": "concurrently \"pnpm run voicevox:start\" \"pnpm start\""
+    "start:full": "concurrently \"pnpm run voicevox:start\" \"pnpm run dev\""
   },
   "dependencies": {
     "@discordjs/opus": "^0.10.0",

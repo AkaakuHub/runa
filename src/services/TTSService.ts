@@ -3,13 +3,12 @@ import {
 	type AudioPlayer,
 	createAudioResource,
 	getVoiceConnection,
-	joinVoiceChannel,
-	type VoiceConnection,
 } from "@discordjs/voice";
 import type { VoiceChannel } from "discord.js";
 import { logError, logInfo } from "../utils/logger";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { TTSQueue } from "./TTSQueue";
 
 interface TTSConfig {
 	voicevoxUrl: string;
@@ -35,6 +34,7 @@ export class TTSService {
 	private voiceCharacters: VoiceCharacter[] = [];
 	private isPlaying = false;
 	private currentAudioFile: string | null = null;
+	private ttsQueue: TTSQueue;
 
 	private constructor() {
 		// デフォルト設定
@@ -47,6 +47,7 @@ export class TTSService {
 			enabled: false,
 		};
 
+		this.ttsQueue = TTSQueue.getInstance();
 		this.setupEventListeners();
 		this.loadVoiceCharacters();
 	}
@@ -87,7 +88,7 @@ export class TTSService {
 	/**
 	 * 音声ファイルをクリーンアップ
 	 */
-	private cleanupAudioFile(audioFile: string): void {
+	public cleanupAudioFile(audioFile: string): void {
 		try {
 			if (existsSync(audioFile)) {
 				rmSync(audioFile);
@@ -192,37 +193,54 @@ export class TTSService {
 			return false;
 		}
 
-		// テキストの前処理
-		const processedText = this.preprocessText(text);
-		if (!processedText) {
+		// キューに追加
+		return this.ttsQueue.addToQueue(text, voiceChannel);
+	}
+
+	/**
+	 * 直接音声を再生（キューを使わない）
+	 */
+	public async speakDirect(
+		text: string,
+		voiceChannel: VoiceChannel,
+	): Promise<boolean> {
+		if (!this.config.enabled) {
+			logInfo("TTS機能が無効のため、音声再生をスキップします");
 			return false;
 		}
 
-		// 長いテキストを分割
-		const textChunks = this.splitText(processedText, 30);
-
 		try {
-			// 分割されたテキストを順番に再生
-			for (const chunk of textChunks) {
-				// 音声ファイルを生成
-				const audioFile = await this.generateAudio(chunk);
-				if (!audioFile) {
-					continue;
-				}
-
-				// ボイスチャンネルに接続
-				const connection = await this.connectToVoiceChannel(voiceChannel);
-				if (!connection) {
-					return false;
-				}
-
-				// 音声を再生（前の音声が終わるのを待つ）
-				await this.playAudioAndWait(audioFile, voiceChannel.guild.id);
+			// テキストの前処理
+			const processedText = this.preprocessText(text);
+			if (!processedText) {
+				return false;
 			}
 
-			return true;
+			// 長いテキストを分割
+			const textChunks = this.splitText(processedText, 30);
+			if (textChunks.length === 0) {
+				return false;
+			}
+
+			// 音声ファイルを生成して再生
+			let success = true;
+			for (const chunk of textChunks) {
+				const audioFile = await this.generateAudio(chunk);
+				if (audioFile) {
+					const playbackSuccess = await this.playAudioAndWait(
+						audioFile,
+						voiceChannel.guild.id,
+					);
+					this.cleanupAudioFile(audioFile);
+					if (!playbackSuccess) {
+						success = false;
+					}
+				}
+			}
+
+			return success;
 		} catch (error) {
-			logError(`TTS再生エラー: ${error}`);
+			logError(`直接音声再生エラー: ${error}`);
 			return false;
 		}
 	}
@@ -230,7 +248,7 @@ export class TTSService {
 	/**
 	 * テキストの前処理
 	 */
-	private preprocessText(text: string): string {
+	public preprocessText(text: string): string {
 		// URLを除去（www付きも含む）
 		let processed = text.replace(/(https?:\/\/\S+)|(www\.\S+)/g, "");
 
@@ -256,7 +274,7 @@ export class TTSService {
 	/**
 	 * 長いテキストを分割する
 	 */
-	private splitText(text: string, maxLength = 30): string[] {
+	public splitText(text: string, maxLength = 30): string[] {
 		const chunks: string[] = [];
 
 		// 句読点や改行で分割を試みる
@@ -295,7 +313,7 @@ export class TTSService {
 	/**
 	 * 音声ファイルを生成
 	 */
-	private async generateAudio(text: string): Promise<string | null> {
+	public async generateAudio(text: string): Promise<string | null> {
 		try {
 			// 一時ファイル名を生成（タイムスタンプベース）
 			const timestamp = Date.now();
@@ -361,72 +379,9 @@ export class TTSService {
 	}
 
 	/**
-	 * ボイスチャンネルに接続
-	 */
-	private async connectToVoiceChannel(
-		voiceChannel: VoiceChannel,
-	): Promise<VoiceConnection | null> {
-		try {
-			const existingConnection = getVoiceConnection(voiceChannel.guild.id);
-
-			// 同じチャンネルに既に接続していればそれを利用
-			if (
-				existingConnection &&
-				existingConnection.joinConfig.channelId === voiceChannel.id
-			) {
-				logInfo("TTS: 既存のボイス接続を利用します");
-				return existingConnection;
-			}
-
-			// 別のチャンネルに接続済みの場合は何もしない（干渉しない）
-			if (existingConnection) {
-				logInfo(
-					`TTS: 別のチャンネルに接続済みのため、TTSは実行しません (current: ${existingConnection.joinConfig.channelId}, requested: ${voiceChannel.id})`,
-				);
-				return null;
-			}
-
-			// 新規接続
-			const connection = joinVoiceChannel({
-				channelId: voiceChannel.id,
-				guildId: voiceChannel.guild.id,
-				adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-				selfDeaf: true,
-				selfMute: false,
-			});
-
-			// 接続準備完了を待機
-			await new Promise<void>((resolve, reject) => {
-				const timeout = setTimeout(() => {
-					reject(new Error("ボイス接続タイムアウト"));
-				}, 10000);
-
-				const stateChangeHandler = (
-					_oldState: { status: string },
-					newState: { status: string },
-				) => {
-					if (newState.status === "ready") {
-						clearTimeout(timeout);
-						connection.off("stateChange", stateChangeHandler);
-						logInfo("TTS: ボイス接続の準備完了");
-						resolve();
-					}
-				};
-
-				connection.on("stateChange", stateChangeHandler);
-			});
-
-			return connection;
-		} catch (error) {
-			logError(`TTSボイスチャンネル接続エラー: ${error}`);
-			return null;
-		}
-	}
-
-	/**
 	 * 音声を再生（再生完了を待機）
 	 */
-	private async playAudioAndWait(
+	public async playAudioAndWait(
 		audioFile: string,
 		guildId: string,
 	): Promise<boolean> {
