@@ -52,7 +52,7 @@ export const TTSSpeakersCommand: CommandDefinition = {
 			});
 
 			// replyLongMessageを使用して長いメッセージを送信
-			await replyLongMessage(interaction, speakerList);
+			await replyLongMessage(interaction, speakerList, true);
 
 			logInfo("音声キャラクター一覧を表示しました");
 		} catch (error) {

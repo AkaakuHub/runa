@@ -1,7 +1,8 @@
-import type {
-	TextChannel,
-	ChatInputCommandInteraction,
-	Message,
+import {
+	type TextChannel,
+	type ChatInputCommandInteraction,
+	type Message,
+	MessageFlags,
 } from "discord.js";
 
 /**
@@ -130,6 +131,7 @@ export async function sendLongMessage(
 export async function replyLongMessage(
 	interaction: ChatInputCommandInteraction,
 	content: string,
+	isEphemeral = false,
 ): Promise<void> {
 	const chunks = splitMessage(content, 2000);
 
@@ -155,6 +157,7 @@ export async function replyLongMessage(
 		for (let i = 0; i < safeChunks.length; i++) {
 			await interaction.followUp({
 				content: safeChunks[i],
+				flags: isEphemeral ? MessageFlags.Ephemeral : undefined,
 			});
 		}
 	} catch (error) {
