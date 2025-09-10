@@ -596,6 +596,11 @@ export class MusicService {
 		return false;
 	}
 
+	// AudioPlayerを取得（TTSとの共有用）
+	public getPlayer(): AudioPlayer {
+		return this.player;
+	}
+
 	// 現在のテキストチャンネルIDを取得するメソッド
 	public getCurrentTextChannelId(): string | undefined {
 		return this.currentTextChannel?.id;

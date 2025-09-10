@@ -1,11 +1,9 @@
 import {
-	type AudioPlayer,
 	AudioPlayerStatus,
-	createAudioPlayer,
+	type AudioPlayer,
 	createAudioResource,
 	getVoiceConnection,
 	joinVoiceChannel,
-	NoSubscriberBehavior,
 	type VoiceConnection,
 } from "@discordjs/voice";
 import type { VoiceChannel } from "discord.js";
@@ -34,19 +32,11 @@ interface VoiceCharacter {
 export class TTSService {
 	private static instance: TTSService;
 	private config: TTSConfig;
-	private player: AudioPlayer;
 	private voiceCharacters: VoiceCharacter[] = [];
 	private isPlaying = false;
 	private currentAudioFile: string | null = null;
 
 	private constructor() {
-		this.player = createAudioPlayer({
-			behaviors: {
-				noSubscriber: NoSubscriberBehavior.Play,
-				maxMissedFrames: 50,
-			},
-		});
-
 		// デフォルト設定
 		this.config = {
 			voicevoxUrl: process.env.VOICEVOX_URL || "http://127.0.0.1:50021",
@@ -62,35 +52,7 @@ export class TTSService {
 	}
 
 	private setupEventListeners(): void {
-		this.player.on(AudioPlayerStatus.Playing, () => {
-			logInfo("TTSプレイヤー状態: 再生中");
-		});
-
-		this.player.on(AudioPlayerStatus.Idle, () => {
-			logInfo("TTSプレイヤー状態: アイドル状態");
-			this.isPlaying = false;
-
-			// 再生終了後に音声ファイルを削除
-			if (this.currentAudioFile) {
-				this.cleanupAudioFile(this.currentAudioFile);
-				this.currentAudioFile = null;
-			}
-		});
-
-		this.player.on(AudioPlayerStatus.Buffering, () => {
-			logInfo("TTSプレイヤー状態: バッファリング中");
-		});
-
-		this.player.on("error", (error) => {
-			logError(`TTS音声再生エラー: ${error.message}`);
-			this.isPlaying = false;
-
-			// エラー時にも音声ファイルを削除
-			if (this.currentAudioFile) {
-				this.cleanupAudioFile(this.currentAudioFile);
-				this.currentAudioFile = null;
-			}
-		});
+		// TTSは独自のプレイヤーを持たないため、イベントリスナーは不要
 	}
 
 	public static getInstance(): TTSService {
@@ -499,21 +461,28 @@ export class TTSService {
 				resource.volume.setVolume(this.config.volume);
 			}
 
-			// TTS用に独自のAudioPlayerを使用
-			connection.subscribe(this.player);
-			this.player.play(resource);
+			// 音楽が再生中の場合は一時停止
+			if (wasMusicPlaying) {
+				logInfo("TTS: 音楽を一時停止します");
+				musicService.pauseMusic();
+			}
+
+			// MusicServiceのAudioPlayerを一時的に使用
+			const musicPlayer = musicService.getPlayer();
+			connection.subscribe(musicPlayer);
+			musicPlayer.play(resource);
 			this.isPlaying = true;
 			this.currentAudioFile = audioFile;
 
 			logInfo("TTS音声の再生を開始しました");
 
 			// 再生完了を待機
-			const result = await this.waitForPlaybackComplete();
+			const result = await this.waitForPlaybackComplete(musicPlayer);
 
 			// TTS再生終了後に音楽を再開
 			if (wasMusicPlaying) {
 				logInfo("TTS: 音楽を再開します");
-				await new Promise((resolve) => setTimeout(resolve, 500)); // 少し待ってから再開
+				await new Promise((resolve) => setTimeout(resolve, 300)); // 少し待ってから再開
 				musicService.resumeMusic();
 			}
 
@@ -527,16 +496,24 @@ export class TTSService {
 	/**
 	 * 再生完了を待機
 	 */
-	private async waitForPlaybackComplete(): Promise<boolean> {
+	private async waitForPlaybackComplete(player: AudioPlayer): Promise<boolean> {
 		return new Promise((resolve) => {
-			const checkCompletion = () => {
-				if (!this.isPlaying) {
-					resolve(true);
-				} else {
-					setTimeout(checkCompletion, 100);
-				}
+			const finishHandler = () => {
+				this.isPlaying = false;
+				player.off(AudioPlayerStatus.Idle, finishHandler);
+				player.off("error", errorHandler);
+				resolve(true);
 			};
-			checkCompletion();
+
+			const errorHandler = () => {
+				this.isPlaying = false;
+				player.off(AudioPlayerStatus.Idle, finishHandler);
+				player.off("error", errorHandler);
+				resolve(true);
+			};
+
+			player.on(AudioPlayerStatus.Idle, finishHandler);
+			player.on("error", errorHandler);
 		});
 	}
 
@@ -547,7 +524,7 @@ export class TTSService {
 		try {
 			const connection = getVoiceConnection(guildId);
 			if (connection) {
-				this.player.stop(true);
+				// TTSServiceは独自のプレイヤーを持たないため、接続のみ破棄
 				connection.destroy();
 				this.isPlaying = false;
 
