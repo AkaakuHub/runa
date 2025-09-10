@@ -36,6 +36,12 @@ check_voicevox_setup() {
         log_error "Voicevox run script not found. Please run setup first: npm run voicevox:setup"
         exit 1
     fi
+
+    # tts-cache directory check
+    if [[ ! -d "tts-cache" ]]; then
+        log_warn "tts-cache directory not found. Creating it now."
+        mkdir -p tts-cache
+    fi
 }
 
 # Check if Voicevox is already running
