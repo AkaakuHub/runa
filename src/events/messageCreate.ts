@@ -42,15 +42,13 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		/(([ｾセせ][ｷキき][ｭュゅ][ｷキき][ｬャゃ])|せくきゃん|seccamp)/i,
 	];
 
-	if (kokePattern.test(message.content) || bufoPattern.test(message.content)) {
+	if (forbiddenPatterns.some((pattern) => pattern.test(message.content))) {
 		await message.reply(
-			"💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡",
+			"💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡"
 		);
-		// がああパターンも含む場合は、この後の処理を継続しない
 		if (hasGoosePattern) {
 			return;
 		}
-		return;
 	}
 
 	const iyaMessageDict = {
