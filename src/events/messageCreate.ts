@@ -46,9 +46,7 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		await message.reply(
 			"💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡"
 		);
-		if (hasGoosePattern) {
-			return;
-		}
+		return;
 	}
 
 	const iyaMessageDict = {
