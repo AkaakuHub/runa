@@ -1,5 +1,5 @@
 import type { ChatInputCommandInteraction } from "discord.js";
-import { ChannelType } from "discord.js";
+import { ChannelType, MessageFlags } from "discord.js";
 import type { TextChannel } from "discord.js";
 import { ChannelRegistryService } from "../../services/ChannelRegistryService";
 import type { CommandDefinition } from "../../types";
@@ -129,7 +129,7 @@ export const RegisterCommand: CommandDefinition = {
 			if (!interaction.replied && !interaction.deferred) {
 				await interaction.reply({
 					content: "エラーが発生しました",
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 			} else {
 				await interaction.editReply("エラーが発生しました");
@@ -137,5 +137,3 @@ export const RegisterCommand: CommandDefinition = {
 		}
 	},
 };
-
-export default RegisterCommand;

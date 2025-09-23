@@ -1,4 +1,8 @@
-import { type ChatInputCommandInteraction, ChannelType } from "discord.js";
+import {
+	type ChatInputCommandInteraction,
+	ChannelType,
+	MessageFlags,
+} from "discord.js";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { dailyChannelService } from "../../services/DailyChannelService";
@@ -33,7 +37,7 @@ export const DailyConfigCommand: CommandDefinition = {
 			if (!interaction.guild) {
 				await interaction.reply({
 					content: "このコマンドはサーバー内でのみ使用できます。",
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
@@ -46,7 +50,7 @@ export const DailyConfigCommand: CommandDefinition = {
 					if (!channelId) {
 						await interaction.reply({
 							content: "チャンネルIDを指定してください。",
-							ephemeral: true,
+							flags: MessageFlags.Ephemeral,
 						});
 						return;
 					}
@@ -55,7 +59,7 @@ export const DailyConfigCommand: CommandDefinition = {
 					if (!channel || channel.type !== ChannelType.GuildText) {
 						await interaction.reply({
 							content: "指定されたIDのテキストチャンネルが見つかりません。",
-							ephemeral: true,
+							flags: MessageFlags.Ephemeral,
 						});
 						return;
 					}
@@ -68,12 +72,12 @@ export const DailyConfigCommand: CommandDefinition = {
 					if (added) {
 						await interaction.reply({
 							content: `✅ ${channel.name} (${channelId}) を日次サマリー対象チャンネルに追加しました。`,
-							ephemeral: true,
+							flags: MessageFlags.Ephemeral,
 						});
 					} else {
 						await interaction.reply({
 							content: `⚠️ ${channel.name} は既に登録されています。`,
-							ephemeral: true,
+							flags: MessageFlags.Ephemeral,
 						});
 					}
 					break;
@@ -83,7 +87,7 @@ export const DailyConfigCommand: CommandDefinition = {
 					if (!channelId) {
 						await interaction.reply({
 							content: "削除するチャンネルIDを指定してください。",
-							ephemeral: true,
+							flags: MessageFlags.Ephemeral,
 						});
 						return;
 					}
@@ -98,12 +102,12 @@ export const DailyConfigCommand: CommandDefinition = {
 						const channelName = channel?.name || channelId;
 						await interaction.reply({
 							content: `✅ ${channelName} を日次サマリー対象から削除しました。`,
-							ephemeral: true,
+							flags: MessageFlags.Ephemeral,
 						});
 					} else {
 						await interaction.reply({
 							content: "⚠️ 指定されたチャンネルは登録されていません。",
-							ephemeral: true,
+							flags: MessageFlags.Ephemeral,
 						});
 					}
 					break;
@@ -121,8 +125,10 @@ export const DailyConfigCommand: CommandDefinition = {
 
 					// 投稿用チャンネル
 					if (summaryChannelId) {
-						const summaryChannel = interaction.guild.channels.cache.get(summaryChannelId);
-						const summaryChannelName = summaryChannel?.name || "不明なチャンネル";
+						const summaryChannel =
+							interaction.guild.channels.cache.get(summaryChannelId);
+						const summaryChannelName =
+							summaryChannel?.name || "不明なチャンネル";
 						content += `📢 **投稿チャンネル:** ${summaryChannelName} (${summaryChannelId})\n\n`;
 					} else {
 						content += "📢 **投稿チャンネル:** 未設定\n\n";
@@ -145,7 +151,7 @@ export const DailyConfigCommand: CommandDefinition = {
 
 					await interaction.reply({
 						content,
-						ephemeral: true,
+						flags: MessageFlags.Ephemeral,
 					});
 					break;
 				}
@@ -154,7 +160,7 @@ export const DailyConfigCommand: CommandDefinition = {
 					await dailyChannelService.clearChannels(interaction.guild.id);
 					await interaction.reply({
 						content: "✅ 全ての日次サマリー対象チャンネルを削除しました。",
-						ephemeral: true,
+						flags: MessageFlags.Ephemeral,
 					});
 					break;
 				}
@@ -163,7 +169,7 @@ export const DailyConfigCommand: CommandDefinition = {
 					if (!channelId) {
 						await interaction.reply({
 							content: "投稿用チャンネルIDを指定してください。",
-							ephemeral: true,
+							flags: MessageFlags.Ephemeral,
 						});
 						return;
 					}
@@ -172,7 +178,7 @@ export const DailyConfigCommand: CommandDefinition = {
 					if (!channel || channel.type !== ChannelType.GuildText) {
 						await interaction.reply({
 							content: "指定されたIDのテキストチャンネルが見つかりません。",
-							ephemeral: true,
+							flags: MessageFlags.Ephemeral,
 						});
 						return;
 					}
@@ -184,7 +190,7 @@ export const DailyConfigCommand: CommandDefinition = {
 
 					await interaction.reply({
 						content: `✅ ${channel.name} (${channelId}) を日次サマリー投稿チャンネルに設定しました。`,
-						ephemeral: true,
+						flags: MessageFlags.Ephemeral,
 					});
 					break;
 				}
@@ -193,7 +199,7 @@ export const DailyConfigCommand: CommandDefinition = {
 					await dailyChannelService.clearSummaryChannel(interaction.guild.id);
 					await interaction.reply({
 						content: "✅ 日次サマリー投稿チャンネルの設定を削除しました。",
-						ephemeral: true,
+						flags: MessageFlags.Ephemeral,
 					});
 					break;
 				}
@@ -201,7 +207,7 @@ export const DailyConfigCommand: CommandDefinition = {
 				default:
 					await interaction.reply({
 						content: "無効なアクションです。",
-						ephemeral: true,
+						flags: MessageFlags.Ephemeral,
 					});
 			}
 
@@ -212,7 +218,7 @@ export const DailyConfigCommand: CommandDefinition = {
 			logError(`Error executing daily config command: ${error}`);
 			await interaction.reply({
 				content: "設定の変更中にエラーが発生しました。",
-				ephemeral: true,
+				flags: MessageFlags.Ephemeral,
 			});
 		}
 	},

@@ -158,3 +158,9 @@ sketch
 
 temp
 data
+
+--Frag*
+tts-cache
+tts-temp-*
+
+voicevox

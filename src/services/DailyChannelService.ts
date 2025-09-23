@@ -28,7 +28,10 @@ class DailyChannelService {
 				if (Array.isArray(value)) {
 					this.config[guildId] = { channels: value };
 				} else {
-					this.config[guildId] = value as { channels: string[]; summaryChannel?: string };
+					this.config[guildId] = value as {
+						channels: string[];
+						summaryChannel?: string;
+					};
 				}
 			}
 

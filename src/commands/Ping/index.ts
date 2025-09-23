@@ -7,11 +7,10 @@ export const PingCommand: CommandDefinition = {
 	description: "応答速度を確認します。",
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
 		try {
-			const sent = await interaction.deferReply({
+			await interaction.deferReply({
 				ephemeral: false,
-				fetchReply: true,
 			});
-			const latency = sent.createdTimestamp - interaction.createdTimestamp;
+			const latency = Date.now() - interaction.createdTimestamp;
 
 			await interaction.editReply({
 				content: `Pong! 🏓\nレイテンシ: ${latency}ms`,

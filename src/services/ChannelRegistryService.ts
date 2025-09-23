@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import path from "path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import path from "node:path";
 import { logInfo, logError } from "../utils/logger";
 
 /**
@@ -33,7 +33,10 @@ export class ChannelRegistryService {
 			this.registeredChannels.set(guildId, []);
 		}
 
-		const channels = this.registeredChannels.get(guildId)!;
+		const channels = this.registeredChannels.get(guildId);
+		if (!channels) {
+			return false;
+		}
 		if (channels.includes(channelId)) {
 			return false; // 既に登録済み
 		}
@@ -55,7 +58,10 @@ export class ChannelRegistryService {
 			return false;
 		}
 
-		const channels = this.registeredChannels.get(guildId)!;
+		const channels = this.registeredChannels.get(guildId);
+		if (!channels) {
+			return false;
+		}
 		const index = channels.indexOf(channelId);
 		if (index === -1) {
 			return false; // 登録されていない
@@ -78,7 +84,10 @@ export class ChannelRegistryService {
 			return false;
 		}
 
-		const channels = this.registeredChannels.get(guildId)!;
+		const channels = this.registeredChannels.get(guildId);
+		if (!channels) {
+			return false;
+		}
 		return channels.includes(channelId);
 	}
 
@@ -125,9 +134,9 @@ export class ChannelRegistryService {
 				this.registeredChannels.clear();
 
 				// JSON オブジェクトを Map に変換
-				Object.entries(data).forEach(([guildId, channels]) => {
+				for (const [guildId, channels] of Object.entries(data)) {
 					this.registeredChannels.set(guildId, channels as string[]);
-				});
+				}
 
 				logInfo("登録チャンネルデータをディスクから読み込みました");
 			} else {

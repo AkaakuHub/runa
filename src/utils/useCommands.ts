@@ -13,13 +13,6 @@ export const registerCommands = (commandsList: CommandDefinition[]): void => {
 };
 
 /**
- * 登録されたすべてのコマンドを取得する
- */
-export const getCommands = (): CommandDefinition[] => {
-	return commands;
-};
-
-/**
  * 名前でコマンドを取得する
  * @param name コマンド名
  */
@@ -62,6 +55,31 @@ export const getCommandBuilders = (): object[] => {
 						break;
 					case "INTEGER":
 						builder.addIntegerOption((opt) => {
+							opt
+								.setName(option.name)
+								.setDescription(option.description)
+								.setRequired(option.required);
+
+							if (option.min_value !== undefined) {
+								opt.setMinValue(option.min_value);
+							}
+							if (option.max_value !== undefined) {
+								opt.setMaxValue(option.max_value);
+							}
+
+							if (option.choices) {
+								for (const choice of option.choices) {
+									opt.addChoices({
+										name: choice.name,
+										value: choice.value as number,
+									});
+								}
+							}
+							return opt;
+						});
+						break;
+					case "NUMBER":
+						builder.addNumberOption((opt) => {
 							opt
 								.setName(option.name)
 								.setDescription(option.description)

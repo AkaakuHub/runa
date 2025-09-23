@@ -9,8 +9,9 @@ import { IyaResponse } from "../response/Iya";
 import { ChannelRegistryService } from "../services/ChannelRegistryService";
 import { MusicService } from "../services/MusicService";
 import type { IYAKind } from "../types";
-import { logInfo } from "../utils/logger";
 import { isValidYoutubeUrl } from "../utils/youtubeUtils";
+import { handleTTS } from "../utils/useTTS";
+import { logInfo } from "../utils/logger";
 
 const iyaHandler = (message: Message, kind: IYAKind): void => {
 	logInfo(`Iya! trigger detected from ${message.author.username}`);
@@ -21,11 +22,15 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	// ボットのメッセージは無視
 	if (message.author.bot) return;
 
+	// TTS機能の処理
+	await handleTTS(message);
+
 	// がああパターンのチェック
 	const goosePattern = /が[ぁあ]{2,}/;
+	let hasGoosePattern = false;
 	if (goosePattern.test(message.content)) {
 		await message.react("🦆");
-		return;
+		hasGoosePattern = true;
 	}
 
 	const forbiddenPatterns = [
@@ -37,10 +42,14 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		/(([ｾセせ][ｷキき][ｭュゅ][ｷキき][ｬャゃ])|せくきゃん|seccamp)/i,
 	];
 
-	if (forbiddenPatterns.some((pattern) => pattern.test(message.content))) {
+	if (kokePattern.test(message.content) || bufoPattern.test(message.content)) {
 		await message.reply(
-			"💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡"
+			"💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡",
 		);
+		// がああパターンも含む場合は、この後の処理を継続しない
+		if (hasGoosePattern) {
+			return;
+		}
 		return;
 	}
 
@@ -108,7 +117,7 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		}
 
 		// キューの処理を開始（再生中でなければ再生開始）
-		await musicService.processQueue(message.guild.id);
+		await musicService.processQueue();
 
 		logInfo(
 			`YouTube URL検出: ${message.content}, サーバー: ${message.guild.name}`,
