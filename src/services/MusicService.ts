@@ -52,7 +52,7 @@ export class MusicService {
 			logInfo("プレイヤー状態: アイドル状態");
 			this.isPlaying = false;
 			this.retryCount = 0; // 再試行カウンターをリセット
-			this.playNext();
+			// playNextの呼び出しを削除 - 各再生処理内で個別にハンドリングするため
 		});
 
 		this.player.on(AudioPlayerStatus.Buffering, () => {
