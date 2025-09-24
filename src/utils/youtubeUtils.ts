@@ -16,7 +16,7 @@ export async function streamYoutubeAudio(
 		const args = [
 			url,
 			"-f",
-			"bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio",
+			"bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio",
 			"-o",
 			"-",
 			"--no-mtime",
