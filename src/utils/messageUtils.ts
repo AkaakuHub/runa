@@ -16,45 +16,11 @@ import {
  * @returns 分割されたメッセージの配列
  */
 export function splitMessage(message: string, maxLength = 2000): string[] {
-	const chunks: string[] = [];
-
 	if (message.length <= maxLength) {
 		return [message];
 	}
 
-	// トピック単位で分割を試みる
-	const topicSeparator = /🔸 \*\*/g;
-	const topics = message.split(topicSeparator);
-
-	let currentChunk = topics[0]; // ヘッダー部分
-
-	for (let i = 1; i < topics.length; i++) {
-		const topicContent = `🔸 **${topics[i]}`;
-
-		if ((currentChunk + topicContent).length <= maxLength) {
-			currentChunk += topicContent;
-		} else {
-			// 現在のチャンクを保存し、新しいチャンクを開始
-			if (currentChunk.trim()) {
-				chunks.push(currentChunk.trim());
-			}
-			currentChunk = topicContent;
-
-			// 単一トピックが最大長を超える場合は強制分割
-			if (currentChunk.length > maxLength) {
-				const forceSplit = forceSplitMessage(currentChunk, maxLength);
-				chunks.push(...forceSplit.slice(0, -1));
-				currentChunk = forceSplit[forceSplit.length - 1];
-			}
-		}
-	}
-
-	// 最後のチャンクを追加
-	if (currentChunk.trim()) {
-		chunks.push(currentChunk.trim());
-	}
-
-	return chunks.length > 0 ? chunks : [message.substring(0, maxLength)];
+	return forceSplitMessage(message, maxLength);
 }
 
 /**
@@ -78,13 +44,21 @@ function forceSplitMessage(message: string, maxLength: number): string[] {
 			}
 		}
 
-		chunks.push(message.substring(currentPos, chunkEnd));
+		const chunk = message.substring(currentPos, chunkEnd);
+		if (chunk.trim()) {
+			chunks.push(chunk);
+		}
 		currentPos = chunkEnd;
 
 		// 改行文字をスキップ
 		if (currentPos < message.length && message[currentPos] === "\n") {
 			currentPos++;
 		}
+	}
+
+	// 空のチャンクがある場合は元のメッセージの先頭2000文字を返す
+	if (chunks.length === 0) {
+		chunks.push(message.substring(0, maxLength));
 	}
 
 	return chunks;
@@ -174,38 +148,18 @@ export async function editAndFollowUpLongMessage(
 ): Promise<void> {
 	const chunks = splitMessage(content, 2000);
 
-	// 安全対策：すべてのチャンクが2000文字以内であることを確認
-	const safeChunks = chunks.map((chunk) => {
-		if (chunk.length > 2000) {
-			return chunk.substring(0, 2000);
-		}
-		return chunk;
+	if (chunks.length === 0) return;
+
+	// 最初のチャンクをeditReplyで送信
+	await interaction.editReply({
+		content: chunks[0],
 	});
 
-	try {
-		if (safeChunks.length === 0) return;
-
-		// 最初のチャンクをeditReplyで送信
-		await interaction.editReply({
-			content: safeChunks[0],
+	// 残りのチャンクをfollowUpで送信
+	for (let i = 1; i < chunks.length; i++) {
+		await interaction.followUp({
+			content: chunks[i],
+			flags: isEphemeral ? MessageFlags.Ephemeral : undefined,
 		});
-
-		// 残りのチャンクをfollowUpで送信
-		for (let i = 1; i < safeChunks.length; i++) {
-			await interaction.followUp({
-				content: safeChunks[i],
-				flags: isEphemeral ? MessageFlags.Ephemeral : undefined,
-			});
-		}
-	} catch (error) {
-		console.error(`[ERROR] Failed to send edit+followUp message: ${error}`);
-		// フォールバック：最初のチャンクのみ送信を試みる
-		try {
-			await interaction.editReply({
-				content: safeChunks[0].substring(0, 2000),
-			});
-		} catch (fallbackError) {
-			console.error(`[ERROR] Fallback also failed: ${fallbackError}`);
-		}
 	}
 }
