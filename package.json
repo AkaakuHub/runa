@@ -7,7 +7,7 @@
     "start": "tsx src/index.ts",
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
-    "deploy": "tsx src/deploy-commands.ts --reset",
+    "deploy": "tsx src/deploy-commands.ts",
     "reset": "tsx src/deploy-commands.ts --reset-global",
     "lint": "pnpm biome lint --apply ./src",
     "format": "pnpm biome format --write ./src",

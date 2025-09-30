@@ -106,9 +106,6 @@ export async function sendLongMessage(
 	// 安全対策：すべてのチャンクが2000文字以内であることを確認
 	const safeChunks = chunks.map((chunk) => {
 		if (chunk.length > 2000) {
-			console.log(
-				`[WARNING] Chunk exceeds 2000 characters (${chunk.length}), force splitting`,
-			);
 			return chunk.substring(0, 2000);
 		}
 		return chunk;
@@ -135,18 +132,9 @@ export async function replyLongMessage(
 ): Promise<void> {
 	const chunks = splitMessage(content, 2000);
 
-	// デバッグ用：各チャンクの長さをログ（console.logを使用）
-	console.log(`[DEBUG] Splitting message into ${chunks.length} chunks`);
-	chunks.forEach((chunk, index) => {
-		console.log(`[DEBUG] Chunk ${index + 1}: ${chunk.length} characters`);
-	});
-
 	// 安全対策：すべてのチャンクが2000文字以内であることを確認
 	const safeChunks = chunks.map((chunk) => {
 		if (chunk.length > 2000) {
-			console.log(
-				`[WARNING] Chunk exceeds 2000 characters (${chunk.length}), force splitting`,
-			);
 			return chunk.substring(0, 2000);
 		}
 		return chunk;
@@ -162,6 +150,55 @@ export async function replyLongMessage(
 		}
 	} catch (error) {
 		console.error(`[ERROR] Failed to send long message: ${error}`);
+		// フォールバック：最初のチャンクのみ送信を試みる
+		try {
+			await interaction.editReply({
+				content: safeChunks[0].substring(0, 2000),
+			});
+		} catch (fallbackError) {
+			console.error(`[ERROR] Fallback also failed: ${fallbackError}`);
+		}
+	}
+}
+
+/**
+ * インタラクションにeditReplyで最初のチャンクを送信し、残りをfollowUpで送信する
+ * @param interaction Discordインタラクション
+ * @param content 返信するメッセージ内容
+ * @returns Promise<void>
+ */
+export async function editAndFollowUpLongMessage(
+	interaction: ChatInputCommandInteraction,
+	content: string,
+	isEphemeral = false,
+): Promise<void> {
+	const chunks = splitMessage(content, 2000);
+
+	// 安全対策：すべてのチャンクが2000文字以内であることを確認
+	const safeChunks = chunks.map((chunk) => {
+		if (chunk.length > 2000) {
+			return chunk.substring(0, 2000);
+		}
+		return chunk;
+	});
+
+	try {
+		if (safeChunks.length === 0) return;
+
+		// 最初のチャンクをeditReplyで送信
+		await interaction.editReply({
+			content: safeChunks[0],
+		});
+
+		// 残りのチャンクをfollowUpで送信
+		for (let i = 1; i < safeChunks.length; i++) {
+			await interaction.followUp({
+				content: safeChunks[i],
+				flags: isEphemeral ? MessageFlags.Ephemeral : undefined,
+			});
+		}
+	} catch (error) {
+		console.error(`[ERROR] Failed to send edit+followUp message: ${error}`);
 		// フォールバック：最初のチャンクのみ送信を試みる
 		try {
 			await interaction.editReply({

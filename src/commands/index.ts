@@ -18,6 +18,7 @@ import { TTSSpeedCommand } from "./TTS/speed";
 import { TTSPitchCommand } from "./TTS/pitch";
 import { TTSSpeakerCommand } from "./TTS/speaker";
 import { TTSSpeakersCommand } from "./TTS/speakers";
+import { ChatCommand } from "./Chat";
 
 // すべての公開するコマンドの一覧
 const commandsList: CommandDefinition[] = [
@@ -39,6 +40,7 @@ const commandsList: CommandDefinition[] = [
 	TTSPitchCommand,
 	TTSSpeakerCommand,
 	TTSSpeakersCommand,
+	ChatCommand,
 ];
 
 // コマンドを登録
