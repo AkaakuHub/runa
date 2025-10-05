@@ -14,11 +14,29 @@ export const interactionCreateHandler = async (
 		const command = getCommandByName(commandName);
 
 		if (command) {
+			// interactionがまだ有効か確認
+			if (interaction.replied || interaction.deferred) {
+				logInfo(`Interaction already handled for command: ${commandName}`);
+				return;
+			}
+
 			await command.execute(interaction);
 		} else {
 			logInfo(`Unknown command: ${commandName}`);
 		}
 	} catch (error) {
 		logError(`Error handling interaction: ${error}`);
+
+		// エラー時、まだ返信していない場合はエラーメッセージを送信
+		try {
+			if (!interaction.replied && !interaction.deferred) {
+				await interaction.reply({
+					content: "コマンドの実行中にエラーが発生しました。",
+					ephemeral: true,
+				});
+			}
+		} catch (replyError) {
+			logError(`Failed to send error message: ${replyError}`);
+		}
 	}
 };
