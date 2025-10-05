@@ -57,13 +57,18 @@ export async function handleTTS(message: Message): Promise<void> {
 	const existingConnection = getVoiceConnection(message.guild.id);
 	const currentVoiceChannelId = existingConnection?.joinConfig.channelId;
 
-	// 接続が存在しない場合、または接続先が別のチャンネルである場合のみ接続処理を実行
-	if (!existingConnection || currentVoiceChannelId !== voiceChannel.id) {
-		// TTS用に接続
-		const connection = await connectToVoiceChannelForTTS(voiceChannel);
-		if (!connection) {
-			return;
-		}
+	// 既存接続がない場合は処理しない（自動接続を防止）
+	if (!existingConnection) {
+		logInfo("TTS: ボットがボイスチャンネルに参加していません");
+		return;
+	}
+
+	// 接続先が別のチャンネルである場合は処理しない
+	if (currentVoiceChannelId !== voiceChannel.id) {
+		logInfo(
+			`TTS: ボットが別のボイスチャンネルに参加しています (現在: ${currentVoiceChannelId}, ユーザー: ${voiceChannel.id})`,
+		);
+		return;
 	}
 
 	// TTSキューの状態をログ
