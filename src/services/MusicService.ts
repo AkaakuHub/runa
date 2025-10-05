@@ -675,6 +675,17 @@ export class MusicService {
 			const stream = await streamYoutubeAudio(url);
 			if (!stream) {
 				logError(`ストリーム取得失敗: ${url}`);
+
+				// ユーザーにエラーを通知
+				if (this.currentTextChannel) {
+					await this.updateStatusMessage(
+						"❌ YouTube動画の読み込みに失敗しました。",
+						0xff0000,
+						"エラー",
+						true,
+					);
+				}
+
 				return false;
 			}
 

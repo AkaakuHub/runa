@@ -30,20 +30,38 @@ export async function streamYoutubeAudio(
 			return null;
 		}
 
+		let hasError = false;
+
 		// エラーハンドリングを追加
 		childProcess.stderr?.on("data", (data) => {
 			// 重要なエラーのみログ出力
 			const errorMsg = data.toString();
 			if (errorMsg.includes("ERROR") || errorMsg.includes("error")) {
 				logError(`yt-dlp stderr: ${errorMsg}`);
+				hasError = true;
 			}
 		});
 
 		childProcess.on("error", (error) => {
 			logError(`yt-dlp process error: ${error}`);
+			hasError = true;
+		});
+
+		childProcess.on("exit", (code) => {
+			if (code !== 0 && !hasError) {
+				logError(`yt-dlp exited with code ${code}`);
+				hasError = true;
+			}
 		});
 
 		logInfo(`ストリーミング開始成功: ${url}`);
+
+		// エラー情報をストリームに追加
+		if (hasError) {
+			// エラーがある場合はnullを返してエラーを伝達
+			return null;
+		}
+
 		return childProcess.stdout;
 	} catch (error) {
 		logError(`YouTubeストリーミングエラー: ${error}`);
