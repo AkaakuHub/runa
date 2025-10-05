@@ -14,7 +14,11 @@ import {
 	type VoiceChannel,
 } from "discord.js";
 import { logError, logInfo } from "../../src/utils/logger";
-import { streamYoutubeAudio, sanitizeYoutubeUrl } from "../utils/youtubeUtils";
+import {
+	streamYoutubeAudio,
+	sanitizeYoutubeUrl,
+	updateYtdlp,
+} from "../utils/youtubeUtils";
 import { QueueManager } from "./QueueManager";
 
 export class MusicService {
@@ -676,10 +680,13 @@ export class MusicService {
 			if (!stream) {
 				logError(`ストリーム取得失敗: ${url}`);
 
+				// yt-dlpをアップデート
+				await updateYtdlp();
+
 				// ユーザーにエラーを通知
 				if (this.currentTextChannel) {
 					await this.updateStatusMessage(
-						"❌ YouTube動画の読み込みに失敗しました。",
+						"❌ YouTube動画の読み込みに失敗しました。\n\nyt-dlpをアップデートしました。少し時間を置いて再度お試しください。",
 						0xff0000,
 						"エラー",
 						true,

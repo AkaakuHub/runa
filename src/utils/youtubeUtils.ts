@@ -70,6 +70,51 @@ export async function streamYoutubeAudio(
 }
 
 /**
+ * yt-dlpをアップデートする
+ */
+export async function updateYtdlp(): Promise<void> {
+	try {
+		logInfo("yt-dlpのアップデートを開始します");
+
+		const childProcess = spawn("pip", ["install", "-U", "yt-dlp"], {
+			stdio: "pipe",
+		});
+
+		let output = "";
+		let errorOutput = "";
+
+		childProcess.stdout?.on("data", (data) => {
+			output += data.toString();
+		});
+
+		childProcess.stderr?.on("data", (data) => {
+			errorOutput += data.toString();
+		});
+
+		return new Promise((resolve, reject) => {
+			childProcess.on("close", (code) => {
+				if (code === 0) {
+					logInfo(`yt-dlpアップデート成功: ${output.trim()}`);
+					resolve();
+				} else {
+					logError(
+						`yt-dlpアップデート失敗 (code: ${code}): ${errorOutput.trim()}`,
+					);
+					reject(new Error(`yt-dlp update failed with code ${code}`));
+				}
+			});
+
+			childProcess.on("error", (error) => {
+				logError(`yt-dlpアップデートプロセスエラー: ${error}`);
+				reject(error);
+			});
+		});
+	} catch (error) {
+		logError(`yt-dlpアップデートエラー: ${error}`);
+	}
+}
+
+/**
  * YouTube URLを検証
  */
 export function isValidYoutubeUrl(url: string): boolean {
