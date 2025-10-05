@@ -1,3 +1,4 @@
+import { MessageFlags } from "discord.js";
 import type { Interaction } from "discord.js";
 import { logError, logInfo } from "../utils/logger";
 import { getCommandByName } from "../utils/useCommands";
@@ -20,6 +21,9 @@ export const interactionCreateHandler = async (
 				return;
 			}
 
+			// タイムアウトを防ぐためにdeferReplyを実行
+			await interaction.deferReply();
+
 			await command.execute(interaction);
 		} else {
 			logInfo(`Unknown command: ${commandName}`);
@@ -32,7 +36,7 @@ export const interactionCreateHandler = async (
 			if (!interaction.replied && !interaction.deferred) {
 				await interaction.reply({
 					content: "コマンドの実行中にエラーが発生しました。",
-					ephemeral: true,
+					flags: [MessageFlags.Ephemeral],
 				});
 			}
 		} catch (replyError) {
