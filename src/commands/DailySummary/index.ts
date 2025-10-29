@@ -6,10 +6,9 @@ import {
 	type Collection,
 } from "discord.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import type { CommandDefinition, MessageData } from "../../types";
+import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { dailyChannelService } from "../../services/DailyChannelService";
-import { HareKeService } from "../../services/HareKeService";
 import {
 	parseJSTDateRange,
 	getCurrentJSTDateRange,
@@ -343,29 +342,15 @@ export async function generateDailySummary(
 			}
 		}
 
-		// ハレ・ケ判定用の日付を準備（統一されたユーティリティを使用）
-		const targetDateForJudgment = getJSTDateForJudgment(
-			targetDate || undefined,
-		);
-
-		// ハレ・ケ判定を実行（メッセージが0件でも実行）
-		const messageDataForHareKe: MessageData[] = todaysMessages.map((msg) => ({
-			content: msg.content,
-			author: msg.author,
-			timestamp: msg.timestamp,
-			channel: msg.channel,
-		}));
-
-		const hareKeResult = await HareKeService.judge(
-			messageDataForHareKe,
-			targetDateForJudgment,
-		);
-
-		// メッセージが0件の場合でもハレ・ケ判定付きで返す
+		// メッセージが0件の場合の処理
 		if (todaysMessages.length === 0) {
 			const targetDateStr = targetDate || "today";
-			const noMessagesSummary = `📰 **今日のサーバーニュース**\n\n${targetDateStr}はメッセージが見つかりませんでした。`;
-			return generateFinalOutputWithHareKe(noMessagesSummary, hareKeResult);
+			return `📰 **今日のサーバーニュース**
+
+${targetDateStr}はメッセージが見つかりませんでした。
+
+🔸 **静かな一日**
+今日は穏やかな一日でした。明日に向けてエネルギーを蓄える時間でしたね。`;
 		}
 
 		todaysMessages.sort(
@@ -443,25 +428,55 @@ export async function generateDailySummary(
 			})
 			.join("\n");
 
-		// シンプル化した1回のプロンプトで全て処理
-		let prompt = `以下は今日投稿されたメッセージです（時刻とURL付き）。これらの内容をニュース風にまとめて、興味深い話題や重要な出来事を15個のトピックとして整理してください。
-特に個人のメッセージや発言を重視し、ユーザー同士の会話や個人的な出来事に焦点を当ててください。twitterやXの投稿は背景情報として使用してください。
-できるだけメッセージを多く取り上げ、小さな話題でも見逃さずに拾い上げてください。また、プロの新聞記者の立場として、評論家のような視点で、かつ、ユーモアを交えた、読者を楽しませるような文章を書いてください。
-"はい、承知いたしました。以下に、ご指定の形式で出力します。"のような不要な文章は含めないでください。
+		// 日付情報を収集
+		const targetDateForAnalysis = getJSTDateForJudgment(
+			targetDate || undefined,
+		);
+		const dateInfo = {
+			month: targetDateForAnalysis.getMonth() + 1,
+			day: targetDateForAnalysis.getDate(),
+			dayOfWeek: targetDateForAnalysis.getDay(),
+			isMonthStart: targetDateForAnalysis.getDate() === 1,
+			isMonthEnd: targetDateForAnalysis.getDate() >= 28,
+		};
 
-メッセージ:
+		// シンプル化した1回のプロンプトで全て処理（ハレ・ケ判定も含む）
+		let prompt = `あなたはプロの新聞記者兼占い師です。以下の情報を分析して、今日のサーバーのニュースとハレ・ケ判定を行ってください。
+
+【今日のメッセージ】（時刻とURL付き）：
 ${messagesWithMeta}
 
-以下の形式でまとめてください：
+【日付情報】：
+- 日付：${dateInfo.month}月${dateInfo.day}日（${["日", "月", "火", "水", "木", "金", "土"][dateInfo.dayOfWeek]}曜日）
+- 特記事項：${dateInfo.isMonthStart ? "月初" : dateInfo.isMonthEnd ? "月末" : "普段の日"}
+- 六曜や祝祭日も考慮してください。
+
+【依頼内容】
+1. ニュース風に15個のトピックにまとめる
+2. 個人のメッセージや会話を優先的に取り上げる
+3. 小さな話題でも見逃さずに拾い上げる
+4. 今日が「ハレの日」（晴れ・祝祭日）か「ケの日」（平日・日常）かを判定
+5. 判定結果を具体的に分析して説明する
+6. ハレ、またはケかどうかは、会話内容に大きく左右される
+
+【出力形式】
+🎊 **今日は〇〇の日でした！** (XX%)
+┌─ 判定理由 ─────────────────┐
+│ 💬 活動: 分析結果をここに記入                    │
+│ 😊 感情: 分析結果をここに記入                    │
+│ 📅 伝統: 分析結果をここに記入                    │
+│ 🌤️ 自然: 分析結果をここに記入                    │
+│ ✨ 運命: 分析結果をここに記入                    │
+└──────────────────────────┘
+
 📰 **今日のサーバーニュース**
 
 🔸 **トピック1のタイトル** - 13:21
 https://discord.com/channels/...
-要約内容
+要約内容（見出し1文＋内容2文）
 
 🔸 **トピック2のタイトル**
-要約内容
-（時刻・URLが特定できない場合の例）
+要約内容（時刻・URLが特定できない場合）
 
 🔸 **トピック3のタイトル** - 21:10
 https://discord.com/channels/...
@@ -469,16 +484,23 @@ https://discord.com/channels/...
 
 （以下同様に合計15個のトピックを続ける）
 
-注意：
-- 各トピックは見出し1文と、内容2文で要約し、しっかりと中身のあるニュースにする
-- 日本語で出力
-- 評論家のような視点で、ニュース記事のようにまとめる
+🔮 **明日への一言**
+今日の分析を踏まえた明日へのアドバイスやメッセージ
+
+【ハレ・ケ判定の基準】
+- 活動：メッセージ数、参加者数、時間帯の分散度
+- 感情：ポジティブ/ネガティブな言葉のバランス、盛り上がり
+- 伝統：祝日、月の満ち欠け、六曜などの要素
+- 自然：曜日の特性、季節感
+- 運命：総合的な運勢の流れ
+
+【注意事項】
+- 評論家のような視点で、ユーモアを交えた文章で
 - 各トピックは必ず「🔸 **」から始める
-- 時刻・URLが特定できる場合のみ追加する（無理に推測しない）
-- 時刻は HH:MM 形式、URLは正確なDiscordメッセージリンクのみ使用
-- 個人のメッセージや会話を優先的に取り上げる
-- 小さな話題でも見逃さずに取り上げる
-- 15個のトピックを必ず作成する
+- 時刻・URLが特定できる場合のみ追加する
+- 時刻は HH:MM 形式
+- ハレ・ケ判定のパーセンテージは0-100%で
+- 絵文字は「🎊🌸☀️⚖️🌙🕯️🤫」から適切に選択
 `;
 
 		if (highlight) {
@@ -491,43 +513,10 @@ https://discord.com/channels/...
 		// 1回のプロンプト実行
 		const summary = await generateWithRetry(prompt);
 
-		// ハレ・ケ判定結果を統合した最終出力を生成
-		return generateFinalOutputWithHareKe(summary, hareKeResult);
+		// AIが生成した内容をそのまま返す（ハレ・ケ判定も含まれている）
+		return summary;
 	} catch (error) {
 		logError(`Error generating daily summary: ${error}`);
 		throw error;
 	}
-}
-
-/**
- * ハレ・ケ判定結果を統合した最終出力を生成
- */
-function generateFinalOutputWithHareKe(
-	summary: string,
-	hareKeResult: import("../../types").HareKeResult,
-): string {
-	// ハレ・ケ判定ヘッダーを作成
-	const hareKeHeader = `${hareKeResult.emoji} **${hareKeResult.title}** (${hareKeResult.score}%)
-┌─ 判定理由 ─────────────────┐
-│ 💬 活動: ${hareKeResult.breakdown.activity.reason.padEnd(20)} │
-│ 😊 感情: ${hareKeResult.breakdown.emotion.reason.padEnd(20)} │
-│ 📅 伝統: ${hareKeResult.breakdown.tradition.reason.padEnd(20)} │
-│ 🌤️ 自然: ${hareKeResult.breakdown.nature.reason.padEnd(20)} │
-│ ✨ 運命: ${hareKeResult.breakdown.fortune.reason.padEnd(20)} │
-└──────────────────────────┘
-
-`;
-
-	// フッターメッセージを作成
-	const hareKeFooter = `
-
-🔮 **明日への一言**
-${hareKeResult.message}`;
-
-	// サマリーがニュースヘッダーで始まる場合は、その前にハレ・ケ判定を挿入
-	if (summary.includes("📰 **今日のサーバーニュース**")) {
-		return `${summary.replace("📰 **今日のサーバーニュース**", `${hareKeHeader}📰 **今日のサーバーニュース**`)}${hareKeFooter}`;
-	}
-	// ニュースヘッダーがない場合は単純に前後に追加
-	return `${hareKeHeader}${summary}${hareKeFooter}`;
 }

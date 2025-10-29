@@ -123,42 +123,6 @@ export const getCurrentJSTDateString = (): string => {
 };
 
 /**
- * 月相を簡易計算（2025年1月13日を新月基準）
- */
-export const getMoonPhase = (date: Date): string => {
-	const baseDate = new Date("2025-01-13");
-	const diffDays = Math.floor(
-		(date.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24),
-	);
-	const cycle = ((diffDays % 29.5) + 29.5) % 29.5;
-
-	if (cycle < 2 || cycle > 27.5) {
-		return "新月";
-	}
-	if (cycle >= 5 && cycle <= 9) {
-		return "上弦の月";
-	}
-	if (cycle >= 12.75 && cycle <= 16.75) {
-		return "満月";
-	}
-	if (cycle >= 20 && cycle <= 24) {
-		return "下弦の月";
-	}
-	return "月";
-};
-
-/**
- * 六曜を計算（簡易計算）
- */
-export const getRokuyou = (date: Date): string => {
-	const rokuyouList = ["先勝", "友引", "先負", "仏滅", "大安", "赤口"] as const;
-	const month = date.getMonth() + 1;
-	const day = date.getDate();
-	const index = (month + day) % 6;
-	return rokuyouList[index];
-};
-
-/**
  * 現在のタイムスタンプを取得
  */
 export const getCurrentTimestamp = (): number => {
@@ -177,50 +141,6 @@ export const formatToJapaneseDate = (date: Date): string => {
  */
 export const formatToJapaneseTime = (date: Date): string => {
 	return date.toLocaleTimeString("ja-JP");
-};
-
-/**
- * 日付から時間を取得
- */
-export const getHours = (date: Date): number => {
-	return date.getHours();
-};
-
-/**
- * 日付から月と日を取得してMM-DD形式で返す
- */
-export const getMonthDay = (date: Date): string => {
-	return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
-
-/**
- * 日付から曜日番号を取得
- */
-export const getDayOfWeek = (date: Date): number => {
-	return date.getDay();
-};
-
-/**
- * 日付から月を取得
- */
-export const getMonth = (date: Date): number => {
-	return date.getMonth() + 1;
-};
-
-/**
- * 日付から日を取得
- */
-export const getDay = (date: Date): number => {
-	return date.getDate();
-};
-
-/**
- * 日付から年月日を取得してシード値を計算
- */
-export const getDateSeed = (date: Date): number => {
-	return (
-		date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate()
-	);
 };
 
 /**
