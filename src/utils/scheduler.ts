@@ -75,6 +75,9 @@ export function setupDailySummaryScheduler(client: Client): void {
 
 						// 全ての対象チャンネルからメッセージを収集してサマリーを生成
 						logInfo(`Generating summary for guild ${guild.name}...`);
+						// 時間シードの可能性があるので0~2秒の間で、ミリ秒単位でランダムに待機
+						const delayMs = Math.floor(Math.random() * 2000);
+						await new Promise((resolve) => setTimeout(resolve, delayMs));
 						const summary = await generateDailySummary(
 							mockInteraction,
 							configuredChannelIds,
