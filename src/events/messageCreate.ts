@@ -33,12 +33,15 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		hasGoosePattern = true;
 	}
 
-	// ｺｹｰｯ!!のような文字列をチェック（前後に文字があってもOK、表記揺れ対応）
-	const kokePattern = /[ｺコこ][ｹケけ][ｰー～〜ー]*[ｯッっ]!*/i;
-	// ﾌﾞﾎｫｯのような文字列をチェック（前後に文字があってもOK、表記揺れ対応）
-	const bufoPattern = /[ﾌﾞブぶ][ﾎホほ][ｫォおぉ]+[ｯッっ]?/i;
+	const ngWordsRegex = [
+		/[ｺコこ][ｹケけ][ｰー～〜ー]*[ｯッっ]!*/i,
+		/[ﾌﾞブぶ][ﾎホほ][ｫォおぉ]+[ｯッっ]?/i,
+		...(process.env.NG_WORDS?.split(",").map(
+			(word) => new RegExp(word.trim(), "i"),
+		) || []),
+	];
 
-	if (kokePattern.test(message.content) || bufoPattern.test(message.content)) {
+	if (ngWordsRegex.some((regex) => regex.test(message.content))) {
 		await message.reply(
 			"💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡",
 		);
