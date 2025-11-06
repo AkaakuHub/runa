@@ -12,6 +12,7 @@ import type { IYAKind } from "../types";
 import { isValidYoutubeUrl } from "../utils/youtubeUtils";
 import { handleTTS } from "../utils/useTTS";
 import { logInfo } from "../utils/logger";
+import { config } from "../config/config";
 
 const iyaHandler = (message: Message, kind: IYAKind): void => {
 	logInfo(`Iya! trigger detected from ${message.author.username}`);
@@ -20,7 +21,9 @@ const iyaHandler = (message: Message, kind: IYAKind): void => {
 
 export const messageCreateHandler = async (message: Message): Promise<void> => {
 	// ボットのメッセージは無視
-	if (message.author.bot) return;
+	// ではなくて、このbot自身だけを無視する
+	const myselfId = config.clientId;
+	if (message.author.id === myselfId) return;
 
 	// TTS機能の処理
 	await handleTTS(message);
