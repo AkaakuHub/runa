@@ -22,8 +22,7 @@ const iyaHandler = (message: Message, kind: IYAKind): void => {
 export const messageCreateHandler = async (message: Message): Promise<void> => {
 	// ボットのメッセージは無視
 	// ではなくて、このbot自身だけを無視する
-	const myselfId = config.clientId;
-	if (message.author.id === myselfId) return;
+	if (message.author.id === config.clientId) return;
 
 	// TTS機能の処理
 	await handleTTS(message);
