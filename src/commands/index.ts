@@ -19,6 +19,7 @@ import { TTSPitchCommand } from "./TTS/pitch";
 import { TTSSpeakerCommand } from "./TTS/speaker";
 import { TTSSpeakersCommand } from "./TTS/speakers";
 import { ChatCommand } from "./Chat";
+import { SudachiCommand } from "./Sudachi";
 
 // すべての公開するコマンドの一覧
 const commandsList: CommandDefinition[] = [
@@ -41,6 +42,7 @@ const commandsList: CommandDefinition[] = [
 	TTSSpeakerCommand,
 	TTSSpeakersCommand,
 	ChatCommand,
+	SudachiCommand,
 ];
 
 // コマンドを登録
