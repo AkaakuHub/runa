@@ -86,9 +86,6 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		const voiceChannel = member?.voice.channel as VoiceChannel;
 
 		if (!voiceChannel) {
-			await message.reply(
-				"YouTubeの音声を再生するにはボイスチャンネルに接続してください",
-			);
 			return;
 		}
 
@@ -97,9 +94,6 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 
 		// 既存接続がない場合は処理しない（自動接続を防止）
 		if (!existingConnection) {
-			await message.reply(
-				"ボイスチャンネルに参加していません。まず `/join` コマンドで参加させてください",
-			);
 			return;
 		}
 
