@@ -3,77 +3,14 @@ import {
 	AttachmentBuilder,
 } from "discord.js";
 import sharp from "sharp";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as d3 from "d3";
 import { JSDOM } from "jsdom";
 import type { CommandDefinition } from "../../types";
 import { getCurrentJSTDate, getLocalDateString } from "../../utils/dateUtils";
+import { generateAiText } from "../../utils/useAI";
 
 // Geminiを使って反省文を株式会社Anthropicの謝罪文に整形
 const formatApologyText = async (originalText: string): Promise<string> => {
-	const apiKey = process.env.GOOGLE_API_KEY;
-	if (!apiKey) {
-		throw new Error("GOOGLE_API_KEY環境変数が設定されていません");
-	}
-
-	const genAI = new GoogleGenerativeAI(apiKey);
-
-	// リトライ機能付きでモデル取得・実行
-	const generateWithRetry = async (
-		prompt: string,
-		maxRetries = 3,
-		fallbackModel = "gemini-1.5-flash",
-	): Promise<string> => {
-		let lastError: unknown;
-
-		// まず優先モデルで試行
-		for (let attempt = 1; attempt <= maxRetries; attempt++) {
-			try {
-				const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-				const result = await model.generateContent(prompt);
-				return result.response.text();
-			} catch (error: unknown) {
-				lastError = error;
-				console.error(
-					`Attempt ${attempt} with gemini-2.0-flash failed:`,
-					error,
-				);
-
-				// 503エラー（overloaded）の場合は指数バックオフで待機
-				if (
-					error instanceof Error &&
-					(error.message?.includes("503") ||
-						error.message?.includes("overloaded"))
-				) {
-					if (attempt < maxRetries) {
-						const waitTime = Math.min(1000 * 2 ** (attempt - 1), 8000); // 1s, 2s, 4s, max 8s
-						console.log(`Waiting ${waitTime}ms before retry...`);
-						await new Promise((resolve) => setTimeout(resolve, waitTime));
-					}
-				} else {
-					// 503以外のエラーは即座にフォールバックへ
-					break;
-				}
-			}
-		}
-
-		// フォールバックモデルで試行
-		try {
-			console.log(`Falling back to ${fallbackModel} model`);
-			const fallbackModelInstance = genAI.getGenerativeModel({
-				model: fallbackModel,
-			});
-			const result = await fallbackModelInstance.generateContent(prompt);
-			return result.response.text();
-		} catch (fallbackError) {
-			console.error(
-				`Fallback model ${fallbackModel} also failed:`,
-				fallbackError,
-			);
-			throw lastError; // 元のエラーを投げる
-		}
-	};
-
 	const prompt = `以下の反省文をもとに、株式会社Anthropicが実際に発表する謝罪プレスリリースを作成してください。
 
 重要な制約：
@@ -90,7 +27,7 @@ ${originalText}
 1200文字以内の謝罪文：`;
 
 	try {
-		return await generateWithRetry(prompt);
+		return await generateAiText(prompt);
 	} catch (error) {
 		console.error("Gemini API呼び出しエラー:", error);
 		throw new Error("謝罪文の整形に失敗しました");
