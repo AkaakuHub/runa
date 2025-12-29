@@ -44,6 +44,10 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	];
 
 	if (ngWordsRegex.some((regex) => regex.test(message.content))) {
+		// しね・死ねが含まれている場合は何もしない
+		if (/[しシｼ][ねネﾈ]|死[ねネﾈ]/.test(message.content)) {
+			return;
+		}
 		await message.reply(
 			"💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡",
 		);
