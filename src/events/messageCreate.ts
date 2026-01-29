@@ -1,9 +1,10 @@
 import { getVoiceConnection } from "@discordjs/voice";
-import type {
-	GuildMember,
-	Message,
-	TextChannel,
-	VoiceChannel,
+import {
+	MessageFlags,
+	type GuildMember,
+	type Message,
+	type TextChannel,
+	type VoiceChannel,
 } from "discord.js";
 import { IyaResponse } from "../response/Iya";
 import { ChannelRegistryService } from "../services/ChannelRegistryService";
@@ -26,6 +27,24 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 
 	// TTS機能の処理
 	await handleTTS(message);
+
+	// twitter/xリンクの変換処理
+	const urls = message.content.match(/https?:\/\/\S+/g) ?? [];
+	const mkLink = (url: string) => `[.](${url})`;
+	const convertedUrls = urls.map((url: string) =>
+		url
+			.replace(/(^https?:\/\/)(?:www\.)?x\.com\b/i, "$1fxtwitter.com")
+			.replace(/(^https?:\/\/)(?:www\.)?twitter\.com\b/i, "$1fxtwitter.com")
+	);
+	const links = convertedUrls.map(mkLink);
+	await message.reply({
+		content: links.join(" "),
+		flags: MessageFlags.SuppressNotifications,
+		allowedMentions: {
+      repliedUser: false,
+      parse: []
+    }
+	});
 
 	// がああパターンのチェック
 	const goosePattern = /が[ぁあ]{2,}/;
