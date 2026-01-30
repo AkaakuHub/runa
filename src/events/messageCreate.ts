@@ -30,17 +30,25 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 
 	// twitter/xリンクの変換処理
 	const urls = message.content.match(/https?:\/\/\S+/g) ?? []
+	const isTwitterLike = (url: string) =>
+		/(^https?:\/\/)(?:www\.)?(x\.com|twitter\.com)\b/i.test(url)
 	const mkMdLink = (url: string) => `[.](${url})`
 	const mkAngleLink = (url: string) => `<${url}>`
 	const convertToFxTwitter = (url: string) =>
 		url
 			.replace(/(^https?:\/\/)(?:www\.)?x\.com\b/i, "$1fxtwitter.com")
 			.replace(/(^https?:\/\/)(?:www\.)?twitter\.com\b/i, "$1fxtwitter.com")
-	const pairs = urls.map((originalUrl) => {
-		const convertedUrl = convertToFxTwitter(originalUrl)
-		return `${mkMdLink(convertedUrl)} ${mkAngleLink(originalUrl)}`
-	})
-	if (pairs.length) {
+	const pairs = urls
+		.filter(isTwitterLike)
+		.map((originalUrl) => {
+			const convertedUrl = convertToFxTwitter(originalUrl)
+			if (convertedUrl === originalUrl) {
+				return null
+			}
+			return `${mkMdLink(convertedUrl)} ${mkAngleLink(originalUrl)}`
+		})
+		.filter((v): v is string => v !== null)
+	if (pairs.length > 0) {
 		await message.reply({
 			content: pairs.join(" "),
 			flags: MessageFlags.SuppressNotifications,
