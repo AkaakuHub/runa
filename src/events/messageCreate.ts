@@ -29,23 +29,26 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	await handleTTS(message);
 
 	// twitter/xリンクの変換処理
-	const urls = message.content.match(/https?:\/\/\S+/g) ?? [];
-	const mkLink = (url: string) => `[.](${url})`;
-	const convertedUrls = urls.map((url: string) =>
+	const urls = message.content.match(/https?:\/\/\S+/g) ?? []
+	const mkMdLink = (url: string) => `[.](${url})`
+	const mkAngleLink = (url: string) => `<${url}>`
+	const convertToFxTwitter = (url: string) =>
 		url
 			.replace(/(^https?:\/\/)(?:www\.)?x\.com\b/i, "$1fxtwitter.com")
 			.replace(/(^https?:\/\/)(?:www\.)?twitter\.com\b/i, "$1fxtwitter.com")
-	);
-	const links = convertedUrls.map(mkLink);
-	if (links.length) {
+	const pairs = urls.map((originalUrl) => {
+		const convertedUrl = convertToFxTwitter(originalUrl)
+		return `${mkMdLink(convertedUrl)} ${mkAngleLink(originalUrl)}`
+	})
+	if (pairs.length) {
 		await message.reply({
-			content: links.join(" "),
+			content: pairs.join(" "),
 			flags: MessageFlags.SuppressNotifications,
 			allowedMentions: {
 				repliedUser: false,
 				parse: []
 			}
-	});
+		})
 	}
 
 	// がああパターンのチェック
