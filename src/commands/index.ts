@@ -20,6 +20,7 @@ import { TTSSpeakerCommand } from "./TTS/speaker";
 import { TTSSpeakersCommand } from "./TTS/speakers";
 import { ChatCommand } from "./Chat";
 import { SudachiCommand } from "./Sudachi";
+import { FxCommand } from "./Fx";
 
 // すべての公開するコマンドの一覧
 const commandsList: CommandDefinition[] = [
@@ -43,6 +44,7 @@ const commandsList: CommandDefinition[] = [
 	TTSSpeakersCommand,
 	ChatCommand,
 	SudachiCommand,
+	FxCommand,
 ];
 
 // コマンドを登録
