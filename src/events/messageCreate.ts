@@ -37,14 +37,16 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 			.replace(/(^https?:\/\/)(?:www\.)?twitter\.com\b/i, "$1fxtwitter.com")
 	);
 	const links = convertedUrls.map(mkLink);
-	await message.reply({
-		content: links.join(" "),
-		flags: MessageFlags.SuppressNotifications,
-		allowedMentions: {
-      repliedUser: false,
-      parse: []
-    }
+	if (links.length) {
+		await message.reply({
+			content: links.join(" "),
+			flags: MessageFlags.SuppressNotifications,
+			allowedMentions: {
+				repliedUser: false,
+				parse: []
+			}
 	});
+	}
 
 	// がああパターンのチェック
 	const goosePattern = /が[ぁあ]{2,}/;
