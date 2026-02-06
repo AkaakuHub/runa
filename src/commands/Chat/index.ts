@@ -6,11 +6,11 @@ import { chatWithAssistant } from "../../utils/useAI";
 
 export const ChatCommand: CommandDefinition = {
 	name: "chat",
-	description: "Gemini 2.0 Flashとチャットします",
+	description: "AIとチャットします",
 	options: [
 		{
 			name: "message",
-			description: "Geminiに送信するメッセージ",
+			description: "AIに送信するメッセージ",
 			type: "STRING",
 			required: true,
 		},
@@ -53,15 +53,15 @@ async function performChat(
 
 		// チャット用のシステムプロンプト
 		const systemPrompt =
-			"あなたは親切で有用なAIアシスタントです。以下のユーザーのメッセージに丁寧に回答してください。";
+			"あなたは親切で有用なAIアシスタントです。以下のユーザーのメッセージに丁寧に回答してください。否定だけの返答はしないでください。応答は、特に指示のない限り、日本語で行ってください。";
 
 		const response = await chatWithAssistant(message, systemPrompt);
 
 		// 回答を整形
 		const formattedResponse = `
-${response}
+> ${message}
 
--# AIによって生成されました`;
+${response}`;
 
 		return formattedResponse;
 	} catch (error) {

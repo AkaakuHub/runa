@@ -15,10 +15,12 @@ const formatApologyText = async (originalText: string): Promise<string> => {
 
 重要な制約：
 - 文字数は絶対に1200文字以内に収める
+- 文章は、マークダウン形式ではなく、プレーンテキストのみで出力する
+- 日付や、人名のヘッダー等も不要。謝罪文の中身の文章のみを出力する
 - 人間が書いたような自然で簡潔な文章にする
 - AI感のある過度に丁寧な表現は避ける
 - 企業の公式謝罪文として適切だが、堅すぎない文体で、ユーモアをもたせる(ダジャレ、謎掛け、なぞなぞなども可能だが30%程度の確率で使用し、毎回は使用しないこと)
-- 改善策は簡潔に1-2項目のみで、ナンバリングを数字で行う
+- 改善策では、簡潔に1-2項目のみで、ナンバリングを数字で行う
 - 段落は5-6個以内
 
 元の反省文：
@@ -33,6 +35,8 @@ ${originalText}
 		throw new Error("謝罪文の整形に失敗しました");
 	}
 };
+
+const fontFamily = "Noto Serif CJK JP, IPAexMincho, IPAMincho, serif";
 
 const generateApologyImage = async (text: string): Promise<Buffer> => {
 	const width = 1190; // A4サイズ（144dpi - 高解像度）
@@ -64,10 +68,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
 		.append("text")
 		.attr("x", width - 100)
 		.attr("y", 80)
-		.attr(
-			"font-family",
-			"Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif",
-		)
+		.attr("font-family", fontFamily)
 		.attr("font-size", 20)
 		.attr("fill", "black")
 		.attr("text-anchor", "end")
@@ -78,10 +79,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
 		.append("text")
 		.attr("x", 100)
 		.attr("y", 140)
-		.attr(
-			"font-family",
-			"Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif",
-		)
+		.attr("font-family", fontFamily)
 		.attr("font-size", 28)
 		.attr("fill", "black")
 		.text("株式会社Anthropic");
@@ -90,10 +88,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
 		.append("text")
 		.attr("x", 100)
 		.attr("y", 180)
-		.attr(
-			"font-family",
-			"Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif",
-		)
+		.attr("font-family", fontFamily)
 		.attr("font-size", 24)
 		.attr("fill", "black")
 		.text("Claude Code事業部");
@@ -103,10 +98,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
 		.append("text")
 		.attr("x", width / 2)
 		.attr("y", 280)
-		.attr(
-			"font-family",
-			"Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif",
-		)
+		.attr("font-family", fontFamily)
 		.attr("font-size", 36)
 		.attr("fill", "black")
 		.attr("text-anchor", "middle")
@@ -117,10 +109,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
 		.append("text")
 		.attr("x", 100)
 		.attr("y", 340)
-		.attr(
-			"font-family",
-			"Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif",
-		)
+		.attr("font-family", fontFamily)
 		.attr("font-size", 24)
 		.attr("fill", "black")
 		.text("拝啓");
@@ -158,10 +147,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
 						.append("text")
 						.attr("x", isFirstLineOfParagraph ? indentMargin : leftMargin)
 						.attr("y", currentY)
-						.attr(
-							"font-family",
-							"Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif",
-						)
+						.attr("font-family", fontFamily)
 						.attr("font-size", 24)
 						.attr("fill", "black")
 						.text(currentLine);
@@ -184,10 +170,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
 					.append("text")
 					.attr("x", isFirstLineOfParagraph ? indentMargin : leftMargin)
 					.attr("y", currentY)
-					.attr(
-						"font-family",
-						"Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif",
-					)
+					.attr("font-family", fontFamily)
 					.attr("font-size", 24)
 					.attr("fill", "black")
 					.text(currentLine);
@@ -202,10 +185,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
 		.append("text")
 		.attr("x", width - 100)
 		.attr("y", height - 200)
-		.attr(
-			"font-family",
-			"Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif",
-		)
+		.attr("font-family", fontFamily)
 		.attr("font-size", 24)
 		.attr("fill", "black")
 		.attr("text-anchor", "end")
@@ -216,10 +196,7 @@ const generateApologyImage = async (text: string): Promise<Buffer> => {
 		.append("text")
 		.attr("x", width / 2)
 		.attr("y", height - 60)
-		.attr(
-			"font-family",
-			"Times New Roman, YuMincho, Hiragino Mincho ProN, MS PMincho, serif",
-		)
+		.attr("font-family", fontFamily)
 		.attr("font-size", 24)
 		.attr("fill", "black")
 		.attr("text-anchor", "middle")
