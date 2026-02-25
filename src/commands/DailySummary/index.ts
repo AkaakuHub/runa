@@ -69,13 +69,14 @@ async function fetchTweetContent(twitterUrl: string): Promise<string | null> {
 }
 
 const MAX_TOTAL_TOKENS = 8000;
-const RESERVED_OUTPUT_TOKENS = 1400;
+const RESERVED_OUTPUT_TOKENS = 2200;
 const PROMPT_SAFETY_BUFFER_TOKENS = 900;
-const MAX_CHUNK_OUTPUT_TOKENS = 700;
+const MAX_CHUNK_OUTPUT_TOKENS = 1000;
 const MAX_INPUT_TOKENS =
 	MAX_TOTAL_TOKENS - RESERVED_OUTPUT_TOKENS - PROMPT_SAFETY_BUFFER_TOKENS;
 const EMPTY_RESPONSE_RETRY_DELAY_MS = 60 * 1000;
 const EMPTY_RESPONSE_MAX_RETRIES = 3;
+const LENGTH_FINISH_MAX_RETRIES = 2;
 
 const DAY_OF_WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
 
@@ -303,17 +304,37 @@ async function generateNonEmptyTextWithRetry(
 	onRetry?: (message: string) => Promise<void>,
 ): Promise<string> {
 	let attempt = 0;
+	let lengthRetryCount = 0;
+	let completionBudget = maxCompletionTokens;
 
 	while (attempt <= EMPTY_RESPONSE_MAX_RETRIES) {
 		attempt += 1;
 		const result = await generateAiTextWithUsage(prompt, {
-			maxCompletionTokens,
+			maxCompletionTokens: completionBudget,
 			reasoningEffort: "low",
 			temperature,
 		});
 		const normalized = result.text?.trim();
+		const completionUsed = result.usage?.completion_tokens ?? 0;
+		const reachedCompletionBudget =
+			completionUsed > 0 && completionUsed >= completionBudget - 10;
 
 		if (normalized) {
+			if (
+				(result.finishReason === "length" || reachedCompletionBudget) &&
+				lengthRetryCount < LENGTH_FINISH_MAX_RETRIES
+			) {
+				lengthRetryCount += 1;
+				const nextBudget = Math.min(completionBudget + 500, 3500);
+				const retryMessage =
+					`⚠️ ${context} がトークン上限で途中終了の可能性あり。` +
+					`completion budgetを ${completionBudget} -> ${nextBudget} に増やして再生成します。` +
+					`(finish_reason=${result.finishReason ?? "unknown"}, completion_used=${completionUsed})`;
+				logInfo(retryMessage);
+				await onRetry?.(retryMessage);
+				completionBudget = nextBudget;
+				continue;
+			}
 			return normalized;
 		}
 
@@ -336,6 +357,65 @@ async function generateNonEmptyTextWithRetry(
 function extractDiscordUrls(text: string): string[] {
 	const urlRegex = /https:\/\/discord\.com\/channels\/\d+\/\d+\/\d+/g;
 	return Array.from(new Set(text.match(urlRegex) || []));
+}
+
+function mergeWithOverlap(baseText: string, continuation: string): string {
+	const a = baseText.trimEnd();
+	const b = continuation.trimStart();
+	const maxOverlap = Math.min(400, a.length, b.length);
+
+	for (let len = maxOverlap; len >= 40; len--) {
+		if (a.endsWith(b.slice(0, len))) {
+			return `${a}${b.slice(len)}`;
+		}
+	}
+
+	return `${a}\n${b}`;
+}
+
+function isSummaryLikelyIncomplete(summary: string): boolean {
+	if (!summary.trim()) return true;
+	if (!summary.includes("🔮 **明日への一言**")) return true;
+	return false;
+}
+
+async function ensureSummaryCompleteness(
+	originalPrompt: string,
+	partialSummary: string,
+	context: string,
+	onProgress?: (message: string) => Promise<void>,
+): Promise<string> {
+	let current = partialSummary;
+	let attempts = 0;
+
+	while (isSummaryLikelyIncomplete(current) && attempts < 2) {
+		attempts += 1;
+		const continuationPrompt = `${originalPrompt}
+
+【重要】
+以下は、あなたが直前に出力した本文の途中までです。重複させずに「続きだけ」を書いて、必ず最後の
+「🔮 **明日への一言**」まで完了させてください。
+説明文や前置きは禁止です。
+
+【途中までの本文】
+${current}
+
+【ここから続きのみを出力】`;
+
+		await onProgress?.(
+			`⚠️ ${context}: 出力の末尾が不足しているため、続きの生成を実行します (${attempts}/2)`,
+		);
+		const continuation = await generateNonEmptyTextWithRetry(
+			continuationPrompt,
+			`${context}_continuation_${attempts}`,
+			1200,
+			1.1,
+			onProgress,
+		);
+		current = mergeWithOverlap(current, continuation);
+	}
+
+	return current;
 }
 
 export const DailySummaryCommand: CommandDefinition = {
@@ -479,9 +559,15 @@ export const DailySummaryCommand: CommandDefinition = {
 		} catch (error) {
 			logError(`Error executing daily summary command: ${error}`);
 			try {
-				await interaction.editReply({
-					content: "サマリーの生成中にエラーが発生しました。",
-				});
+				if (interaction.deferred || interaction.replied) {
+					await interaction.followUp({
+						content: "サマリーの送信中にエラーが発生しました。",
+					});
+				} else {
+					await interaction.reply({
+						content: "サマリーの生成中にエラーが発生しました。",
+					});
+				}
 			} catch (replyError) {
 				logError(`Failed to send error reply: ${replyError}`);
 			}
@@ -681,6 +767,9 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 		);
 		const estimatedTokens = await estimateTokensGptOss20bFromText(fullPrompt);
 		logInfo(
+			`Daily summary token config - reserved_output: ${RESERVED_OUTPUT_TOKENS}, input_budget: ${MAX_INPUT_TOKENS}, chunk_output: ${MAX_CHUNK_OUTPUT_TOKENS}`,
+		);
+		logInfo(
 			`Daily summary estimated input tokens: ${estimatedTokens} (budget: ${MAX_INPUT_TOKENS})`,
 		);
 
@@ -691,6 +780,12 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 				"direct_summary",
 				RESERVED_OUTPUT_TOKENS,
 				1.2,
+				options?.onProgress,
+			);
+			summary = await ensureSummaryCompleteness(
+				fullPrompt,
+				summary,
+				"direct_summary",
 				options?.onProgress,
 			);
 		} else {
@@ -828,6 +923,12 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 				"merged_summary_from_chunk_digests",
 				RESERVED_OUTPUT_TOKENS,
 				1.15,
+				options?.onProgress,
+			);
+			summary = await ensureSummaryCompleteness(
+				mergedPrompt,
+				summary,
+				"merged_summary_from_chunk_digests",
 				options?.onProgress,
 			);
 		}

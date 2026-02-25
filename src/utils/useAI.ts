@@ -174,6 +174,7 @@ class AiClient {
 		},
 	): Promise<{
 		text: string;
+		finishReason?: string | null;
 		usage?: {
 			prompt_tokens?: number;
 			completion_tokens?: number;
@@ -185,6 +186,7 @@ class AiClient {
 			maxRetries: number,
 		): Promise<{
 			text: string;
+			finishReason?: string | null;
 			usage?: {
 				prompt_tokens?: number;
 				completion_tokens?: number;
@@ -215,6 +217,7 @@ class AiClient {
 								total_tokens: chatCompletion.usage.total_tokens,
 							}
 						: undefined;
+					const finishReason = chatCompletion.choices[0]?.finish_reason ?? null;
 
 					if (usage) {
 						logInfo(
@@ -222,13 +225,12 @@ class AiClient {
 						);
 					}
 					if (!text.trim()) {
-						const finishReason = chatCompletion.choices[0]?.finish_reason;
 						logInfo(
 							`Groq returned empty visible text (finish_reason: ${finishReason})`,
 						);
 					}
 
-					return { text, usage };
+					return { text, finishReason, usage };
 				} catch (error: unknown) {
 					lastError = error;
 					logError(`Attempt ${attempt} failed: ${error}`);

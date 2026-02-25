@@ -8,6 +8,7 @@ import {
 /**
  * Discordの2000文字制限を考慮してメッセージを分割するユーティリティ
  */
+const DISCORD_CHUNK_LIMIT = 1800;
 
 /**
  * メッセージを指定された最大長に分割する
@@ -45,9 +46,7 @@ function forceSplitMessage(message: string, maxLength: number): string[] {
 		}
 
 		const chunk = message.substring(currentPos, chunkEnd);
-		if (chunk.trim()) {
-			chunks.push(chunk);
-		}
+		chunks.push(chunk);
 		currentPos = chunkEnd;
 
 		// 改行文字をスキップ
@@ -74,18 +73,10 @@ export async function sendLongMessage(
 	channel: TextChannel,
 	content: string,
 ): Promise<Message[]> {
-	const chunks = splitMessage(content, 2000);
+	const chunks = splitMessage(content, DISCORD_CHUNK_LIMIT);
 	const sentMessages: Message[] = [];
 
-	// 安全対策：すべてのチャンクが2000文字以内であることを確認
-	const safeChunks = chunks.map((chunk) => {
-		if (chunk.length > 2000) {
-			return chunk.substring(0, 2000);
-		}
-		return chunk;
-	});
-
-	for (const chunk of safeChunks) {
+	for (const chunk of chunks) {
 		const message = await channel.send(chunk);
 		sentMessages.push(message);
 	}
@@ -104,34 +95,14 @@ export async function replyLongMessage(
 	content: string,
 	isEphemeral = false,
 ): Promise<void> {
-	const chunks = splitMessage(content, 2000);
+	const chunks = splitMessage(content, DISCORD_CHUNK_LIMIT);
 
-	// 安全対策：すべてのチャンクが2000文字以内であることを確認
-	const safeChunks = chunks.map((chunk) => {
-		if (chunk.length > 2000) {
-			return chunk.substring(0, 2000);
-		}
-		return chunk;
-	});
-
-	try {
-		// チャンクをfollowUpで送信
-		for (let i = 0; i < safeChunks.length; i++) {
-			await interaction.followUp({
-				content: safeChunks[i],
-				flags: isEphemeral ? MessageFlags.Ephemeral : undefined,
-			});
-		}
-	} catch (error) {
-		console.error(`[ERROR] Failed to send long message: ${error}`);
-		// フォールバック：最初のチャンクのみ送信を試みる
-		try {
-			await interaction.editReply({
-				content: safeChunks[0].substring(0, 2000),
-			});
-		} catch (fallbackError) {
-			console.error(`[ERROR] Fallback also failed: ${fallbackError}`);
-		}
+	// チャンクをfollowUpで送信（失敗は呼び出し元へ伝搬）
+	for (let i = 0; i < chunks.length; i++) {
+		await interaction.followUp({
+			content: chunks[i],
+			flags: isEphemeral ? MessageFlags.Ephemeral : undefined,
+		});
 	}
 }
 
@@ -146,7 +117,7 @@ export async function editAndFollowUpLongMessage(
 	content: string,
 	isEphemeral = false,
 ): Promise<void> {
-	const chunks = splitMessage(content, 2000);
+	const chunks = splitMessage(content, DISCORD_CHUNK_LIMIT);
 
 	if (chunks.length === 0) return;
 
