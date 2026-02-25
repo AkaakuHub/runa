@@ -10,7 +10,7 @@
     "deploy": "tsx src/deploy-commands.ts --reset",
     "reset": "tsx src/deploy-commands.ts --reset-global",
     "reset:only": "tsx src/deploy-commands.ts --reset --reset-global --reset-only",
-    "lint": "pnpm biome lint --apply ./src",
+    "lint": "pnpm biome lint --write ./src",
     "format": "pnpm biome format --write ./src",
     "knip": "knip",
     "voicevox:setup": "./scripts/setup-voicevox.sh",
@@ -25,6 +25,7 @@
   "dependencies": {
     "@discordjs/opus": "^0.10.0",
     "@discordjs/voice": "^0.18.0",
+    "@huggingface/transformers": "^3.8.1",
     "@types/d3": "^7.4.3",
     "@types/jsdom": "^21.1.7",
     "@types/node-cron": "^3.0.11",
