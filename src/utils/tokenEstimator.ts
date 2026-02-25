@@ -2,18 +2,20 @@ import { logError, logInfo } from "./logger";
 
 const GPT_OSS_20B_TOKENIZER_ID = "openai/gpt-oss-20b";
 
-let tokenizerPromise: Promise<unknown> | null = null;
-
 type TokenizerLike = {
 	encode: (text: string) => number[] | Promise<number[]>;
 };
+
+let tokenizerPromise: Promise<TokenizerLike> | null = null;
 
 async function loadTokenizer(): Promise<TokenizerLike> {
 	if (!tokenizerPromise) {
 		tokenizerPromise = (async () => {
 			// @ts-ignore Current tsconfig module resolution cannot locate bundled types here.
 			const { AutoTokenizer } = await import("@huggingface/transformers");
-			return AutoTokenizer.from_pretrained(GPT_OSS_20B_TOKENIZER_ID);
+			return (await AutoTokenizer.from_pretrained(
+				GPT_OSS_20B_TOKENIZER_ID,
+			)) as TokenizerLike;
 		})();
 	}
 

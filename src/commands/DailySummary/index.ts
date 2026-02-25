@@ -112,6 +112,7 @@ function buildFinalSummaryPrompt(
 	let prompt = `あなたはプロの新聞記者兼占い師。与えられた情報だけで、1日分のニュースとハレ・ケ判定を作成してください。
 個人の発言・ユーザー間会話を最優先し、小ネタも取りこぼさず拾ってください。X/Twitter情報は補助扱いです。
 推測や創作は禁止。不要な前置き（例:「承知しました」）は出力しないでください。
+語り口はテンション高めのニュースレポート調。感情の揺れ、意外性、軽いユーモアを必ず入れてください。
 
 ${sourceLabel}：
 ${sourceText}
@@ -142,6 +143,11 @@ ${buildDateInfoSection(dateInfo)}
 - 会話内容は本文へ自然に織り込み、必要なら短い引用「...」として入れる
 - 見出しは自然な記事タイトルにする（例: 「みみちゃん、ウニにやられる？」）
 - 「トピック1」「話題A」「会話まとめ」などの機械的タイトルは禁止
+- 文体は「感情的で、おもしろおかしいニュース・レポート調」を維持する
+- 各トピック本文は「導入 -> 展開 -> 余韻」の流れで書き、場の空気（ざわつき、笑い、困惑、安心）を必ず入れる
+- 乾いた事務要約は禁止（例: 「価格設定」「反応で好評」「コストパフォーマンス」だけで終える文）
+- 禁止: 2文以下の短い断片要約、名詞中心の説明文、SNS要約のような無感情な文体
+- 禁止語調: 「中立的」「収束した」「個人差で終わる」など、温度を下げる締め方
 
 【ハレ・ケ判定の区分】
 - 超ハレ: 90-100%
@@ -173,17 +179,21 @@ etc.
 
 📰 **今日のサーバーニュース**
 
-🔸 **トピック1のタイトル** - 10:01
+🔸 **深夜の乾杯、議論は予想外の方向へ** - 10:01
 https://discord.com/channels/...
 某所の飲み会がもんじゃで3500円という情報に、ある参加者が「酒なしでピンチケもんじゃはしゃばい」と猛反発！ストライキも辞さない構え！？最終的に別店舗に変更されるか、議論が白熱。
 
-🔸 **トピック2のタイトル** - 16:20
+🔸 **増設チャレンジ、気合いで逆転起動** - 16:20
 https://discord.com/channels/...
-XXXがメモリ増設に挑戦！最初は動かなかったものの、気合いを入れたら動いたとのこと。DDR5の増設は難しいと聞きますが、気合いで乗り切ったようです。
+あるメンバーがメモリ増設に挑戦！最初は動かなかったものの、気合いを入れたら動いたとのこと。DDR5の増設は難しいと聞きますが、気合いで乗り切ったようです。
 
-🔸 **トピック3のタイトル** - 21:10
+🔸 **夜の移動で緊急停止、到着は未定** - 21:10
 https://discord.com/channels/...
 メンバーAが路線電車に乗車中、電車が故障し立ち往生！到着時間不明という事態に。果たして無事に目的地にたどり着けるのか？
+
+（悪い例・この文体は禁止）
+- 「1人3000円で飲んで」と価格設定。
+- 「安いな」反応でコストパフォーマンスが好評。
 
 （以下同様に合計15個のトピックを続ける）
 
@@ -289,6 +299,7 @@ async function generateNonEmptyTextWithRetry(
 	prompt: string,
 	context: string,
 	maxCompletionTokens: number,
+	temperature: number,
 	onRetry?: (message: string) => Promise<void>,
 ): Promise<string> {
 	let attempt = 0;
@@ -298,6 +309,7 @@ async function generateNonEmptyTextWithRetry(
 		const result = await generateAiTextWithUsage(prompt, {
 			maxCompletionTokens,
 			reasoningEffort: "low",
+			temperature,
 		});
 		const normalized = result.text?.trim();
 
@@ -678,6 +690,7 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 				fullPrompt,
 				"direct_summary",
 				RESERVED_OUTPUT_TOKENS,
+				1.2,
 				options?.onProgress,
 			);
 		} else {
@@ -756,6 +769,7 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 						chunkPrompt,
 						`chunk_digest_${index + 1}_${chunks.length}`,
 						MAX_CHUNK_OUTPUT_TOKENS,
+						0.9,
 						options?.onProgress,
 					);
 					const extractedUrls = extractDiscordUrls(chunkArticle);
@@ -813,6 +827,7 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 				mergedPrompt,
 				"merged_summary_from_chunk_digests",
 				RESERVED_OUTPUT_TOKENS,
+				1.15,
 				options?.onProgress,
 			);
 		}

@@ -86,6 +86,7 @@ class AiClient {
 		options?: {
 			maxCompletionTokens?: number;
 			reasoningEffort?: "none" | "default" | "low" | "medium" | "high";
+			temperature?: number;
 		},
 	) {
 		return this.client.chat.completions.create({
@@ -98,6 +99,7 @@ class AiClient {
 			model: "openai/gpt-oss-20b",
 			max_completion_tokens: options?.maxCompletionTokens,
 			reasoning_effort: options?.reasoningEffort,
+			temperature: options?.temperature,
 			response_format: { type: "text" },
 		});
 	}
@@ -168,6 +170,7 @@ class AiClient {
 		options?: {
 			maxCompletionTokens?: number;
 			reasoningEffort?: "none" | "default" | "low" | "medium" | "high";
+			temperature?: number;
 		},
 	): Promise<{
 		text: string;
@@ -274,6 +277,7 @@ export const generateAiTextWithUsage = (
 	options?: {
 		maxCompletionTokens?: number;
 		reasoningEffort?: "none" | "default" | "low" | "medium" | "high";
+		temperature?: number;
 	},
 ) => sharedAiClient.generateTextWithUsage(prompt, options);
 
