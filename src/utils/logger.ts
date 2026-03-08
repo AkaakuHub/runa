@@ -21,7 +21,3 @@ export const logInfo = (message: string): void => {
 export const logError = (message: string): void => {
 	logger.error(message);
 };
-
-const logDebug = (message: string): void => {
-	logger.debug(message);
-};

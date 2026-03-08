@@ -5,6 +5,7 @@
     "libsodium-wrappers",
     "opusscript",
     "prism-media",
-    "prettier"
+    "prettier",
+    "@snazzah/davey"
   ]
 }

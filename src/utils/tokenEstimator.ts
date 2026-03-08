@@ -11,7 +11,7 @@ let tokenizerPromise: Promise<TokenizerLike> | null = null;
 async function loadTokenizer(): Promise<TokenizerLike> {
 	if (!tokenizerPromise) {
 		tokenizerPromise = (async () => {
-			// @ts-ignore Current tsconfig module resolution cannot locate bundled types here.
+			// @ts-expect-error Current tsconfig module resolution cannot locate bundled types here.
 			const { AutoTokenizer } = await import("@huggingface/transformers");
 			return (await AutoTokenizer.from_pretrained(
 				GPT_OSS_20B_TOKENIZER_ID,
