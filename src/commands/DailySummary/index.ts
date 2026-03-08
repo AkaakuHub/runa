@@ -1,31 +1,30 @@
 import {
-	type ChatInputCommandInteraction,
 	ChannelType,
-	type TextChannel,
-	type Message,
+	type ChatInputCommandInteraction,
 	type Collection,
+	type Message,
+	type TextChannel,
 } from "discord.js";
-import type { CommandDefinition } from "../../types";
-import { logError, logInfo } from "../../utils/logger";
-import { generateAiTextWithUsage } from "../../utils/useAI";
 import { dailyChannelService } from "../../services/DailyChannelService";
+import type { CommandDefinition } from "../../types";
 import {
-	parseJSTDateRange,
-	getCurrentJSTDateRange,
-	getJSTDateForJudgment,
-	getCurrentTimestamp,
 	formatToDetailedJapaneseDate,
+	getCurrentJSTDateRange,
+	getCurrentTimestamp,
+	getJSTDateForJudgment,
 	getTimestamp,
+	parseJSTDateRange,
 } from "../../utils/dateUtils";
-
+import { logError, logInfo } from "../../utils/logger";
 import {
-	sendLongMessage,
 	editAndFollowUpLongMessage,
+	sendLongMessage,
 } from "../../utils/messageUtils";
 import {
 	estimateTokensGptOss20bFromText,
 	warmupTokenEstimator,
 } from "../../utils/tokenEstimator";
+import { generateAiTextWithUsage } from "../../utils/useAI";
 
 // Twitter/X URL検出とコンテンツ取得のヘルパー関数
 function extractTwitterUrls(content: string): string[] {
@@ -290,6 +289,27 @@ async function splitMessagesByEstimatedTokens(
 
 async function waitMs(ms: number): Promise<void> {
 	await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function pickEvenlyDistributedItems<T>(items: T[], keepCount: number): T[] {
+	if (keepCount >= items.length) return [...items];
+	if (keepCount <= 1) return [items[0]];
+	if (keepCount === 2) return [items[0], items[items.length - 1]];
+
+	const result: T[] = [];
+	const step = (items.length - 1) / (keepCount - 1);
+	let lastIndex = -1;
+
+	for (let i = 0; i < keepCount; i += 1) {
+		let index = Math.round(i * step);
+		if (index <= lastIndex) {
+			index = Math.min(lastIndex + 1, items.length - 1);
+		}
+		result.push(items[index]);
+		lastIndex = index;
+	}
+
+	return result;
 }
 
 interface DailySummaryGenerationOptions {
@@ -885,7 +905,9 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 				throw new Error("All chunk digest generations failed");
 			}
 
-			let mergedDigestSource = chunkDigests.join("\n\n");
+			const allChunkDigests = [...chunkDigests];
+			let selectedChunkDigests = [...allChunkDigests];
+			let mergedDigestSource = selectedChunkDigests.join("\n\n");
 			let mergedPrompt = buildFinalSummaryPrompt(
 				mergedDigestSource,
 				dateInfo,
@@ -898,9 +920,14 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 				`Merged digest prompt estimated input tokens: ${mergedPromptTokens}`,
 			);
 
-			while (mergedPromptTokens > MAX_INPUT_TOKENS && chunkDigests.length > 1) {
-				chunkDigests.shift();
-				mergedDigestSource = chunkDigests.join("\n\n");
+			let keepCount = selectedChunkDigests.length;
+			while (mergedPromptTokens > MAX_INPUT_TOKENS && keepCount > 1) {
+				keepCount -= 1;
+				selectedChunkDigests = pickEvenlyDistributedItems(
+					allChunkDigests,
+					keepCount,
+				);
+				mergedDigestSource = selectedChunkDigests.join("\n\n");
 				mergedPrompt = buildFinalSummaryPrompt(
 					mergedDigestSource,
 					dateInfo,
