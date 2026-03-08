@@ -9,6 +9,8 @@ import {
 import type { VoiceChannel } from "discord.js";
 import { readJsonFileSync, writeJsonFileSync } from "../utils/jsonFile";
 import { logError, logInfo } from "../utils/logger";
+import { parseSimpleSingScore } from "../utils/ttsSing/format";
+import { synthesizeSingVoice } from "../utils/ttsSing/synthesis";
 import { TTSQueue } from "./TTSQueue";
 
 interface TTSConfig {
@@ -47,6 +49,7 @@ export class TTSService {
 	private userSpeakers: Map<string, number> = new Map();
 	private guildSpeeds: Map<string, number> = new Map();
 	private settingsPath = join(process.cwd(), "data", "tts-settings.json");
+	private readonly singSpeaker = "6000";
 
 	private constructor() {
 		// デフォルト設定
@@ -261,6 +264,7 @@ export class TTSService {
 		text: string,
 		voiceChannel: VoiceChannel,
 		userId?: string,
+		isSing?: boolean,
 	): Promise<boolean> {
 		if (!this.config.enabled) {
 			logInfo("TTS機能が無効のため、音声再生をスキップします");
@@ -268,7 +272,7 @@ export class TTSService {
 		}
 
 		// キューに追加
-		return this.ttsQueue.addToQueue(text, voiceChannel, userId);
+		return this.ttsQueue.addToQueue(text, voiceChannel, userId, isSing);
 	}
 
 	/**
@@ -278,6 +282,7 @@ export class TTSService {
 		text: string,
 		voiceChannel: VoiceChannel,
 		userId?: string,
+		isSing = false,
 	): Promise<boolean> {
 		if (!this.config.enabled) {
 			logInfo("TTS機能が無効のため、音声再生をスキップします");
@@ -285,6 +290,19 @@ export class TTSService {
 		}
 
 		try {
+			if (isSing) {
+				const singAudio = await this.generateSingAudio(text);
+				if (!singAudio) {
+					return false;
+				}
+				const playbackSuccess = await this.playAudioAndWait(
+					singAudio,
+					voiceChannel.guild.id,
+				);
+				this.cleanupAudioFile(singAudio);
+				return playbackSuccess;
+			}
+
 			// テキストの前処理
 			const processedText = this.preprocessText(text);
 			if (!processedText) {
@@ -326,6 +344,49 @@ export class TTSService {
 		} catch (error) {
 			logError(`直接音声再生エラー: ${error}`);
 			return false;
+		}
+	}
+
+	private async generateSingAudio(text: string): Promise<string | null> {
+		const score = parseSimpleSingScore(text);
+		if (!score) {
+			logError("歌声スコアの解析に失敗しました");
+			return null;
+		}
+
+		try {
+			const voicevoxBaseUrl = new URL(this.config.voicevoxUrl);
+			const result = await synthesizeSingVoice({
+				host: voicevoxBaseUrl.hostname,
+				port: voicevoxBaseUrl.port || "80",
+				requestedSpeaker: this.singSpeaker,
+				score,
+				request: async (url, option) => {
+					const response = await fetch(url.toString(), option);
+					if (!response.ok) {
+						return undefined;
+					}
+					return response;
+				},
+			});
+
+			if (!result.audioData) {
+				logError(`歌声生成エラー: ${result.error ?? "unknown error"}`);
+				return null;
+			}
+
+			const timestamp = Date.now();
+			const tempFile = join(
+				process.cwd(),
+				"tts-cache",
+				`tts-temp-sing-${timestamp}.wav`,
+			);
+			writeFileSync(tempFile, Buffer.from(result.audioData));
+			logInfo(`歌声音声ファイルを生成しました: ${tempFile}`);
+			return tempFile;
+		} catch (error) {
+			logError(`歌声生成エラー: ${error}`);
+			return null;
 		}
 	}
 

@@ -4,6 +4,8 @@ import { ChannelRegistryService } from "../services/ChannelRegistryService";
 import { TTSQueue } from "../services/TTSQueue";
 import { TTSService } from "../services/TTSService";
 import { logError, logInfo } from "../utils/logger";
+import { isSimpleSingText } from "../utils/ttsSing/format";
+import { formatTTSInput } from "./ttsTextFormatter";
 
 /**
  * TTS機能の処理
@@ -71,9 +73,13 @@ export async function handleTTS(message: Message): Promise<void> {
 
 	// TTSで読み上げ（キューに追加）
 	try {
-		await ttsService.speak(message.content, voiceChannel, message.author.id);
+		const isSing = isSimpleSingText(message.content);
+		const content = isSing
+			? message.content
+			: formatTTSInput(message.content, message.guild);
+		await ttsService.speak(content, voiceChannel, message.author.id, isSing);
 		logInfo(
-			`TTS読み上げキューに追加: ${message.content}, サーバー: ${message.guild.name}`,
+			`TTS読み上げキューに追加: ${content}, サーバー: ${message.guild.name}`,
 		);
 	} catch (error) {
 		logError(`TTS処理エラー: ${error}`);

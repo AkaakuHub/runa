@@ -29,6 +29,9 @@ importers:
       '@types/node-cron':
         specifier: ^3.0.11
         version: 3.0.11
+      abcjs:
+        specifier: ^6.6.2
+        version: 6.6.2
       d3:
         specifier: ^7.9.0
         version: 7.9.0
@@ -1078,6 +1081,9 @@ packages:
 
   abbrev@1.1.1:
     resolution: {integrity: sha512-nne9/IiQ/hzIhY6pdDnbBtz7DjPTKrY00P/zvPSm5pOFkl6xuGrGnXn/VtTNNfNtAfZ9/1RtehkszU9qcTii0Q==}
+
+  abcjs@6.6.2:
+    resolution: {integrity: sha512-YLbp5lYUq0uOywWZx9EuTdm0TcflKZi7hOzz366A/LFl3qoAXSYIjznJQmr/VeHg8NcLxZYoN8dLi7PqCpxKEA==}
 
   abort-controller@3.0.0:
     resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
@@ -3336,6 +3342,8 @@ snapshots:
   '@vladfrangu/async_event_emitter@2.4.7': {}
 
   abbrev@1.1.1: {}
+
+  abcjs@6.6.2: {}
 
   abort-controller@3.0.0:
     dependencies:

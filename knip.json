@@ -1,4 +1,5 @@
 {
+  "ignoreFiles": ["cc-docs/**"],
   "ignoreDependencies": [
     "@discordjs/opus",
     "ffmpeg-static",

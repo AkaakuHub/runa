@@ -30,6 +30,7 @@
     "@types/d3": "^7.4.3",
     "@types/jsdom": "^28.0.0",
     "@types/node-cron": "^3.0.11",
+    "abcjs": "^6.6.2",
     "d3": "^7.9.0",
     "discord.js": "^14.25.1",
     "dotenv": "^17.3.1",

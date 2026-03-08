@@ -7,6 +7,7 @@ interface TTSQueueItem {
 	text: string;
 	voiceChannel: VoiceChannel;
 	userId?: string;
+	isSing?: boolean;
 	audioFiles: string[];
 	resolve: (value: boolean) => void;
 	reject: (reason?: unknown) => void;
@@ -30,6 +31,7 @@ export class TTSQueue {
 		text: string,
 		voiceChannel: VoiceChannel,
 		userId?: string,
+		isSing?: boolean,
 	): Promise<boolean> {
 		return new Promise((resolve, reject) => {
 			const id = `tts_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
@@ -38,6 +40,7 @@ export class TTSQueue {
 				text,
 				voiceChannel,
 				userId,
+				isSing,
 				audioFiles: [],
 				resolve,
 				reject,
@@ -71,6 +74,7 @@ export class TTSQueue {
 						item.text,
 						item.voiceChannel,
 						item.userId,
+						item.isSing,
 					);
 
 					item.resolve(success);
