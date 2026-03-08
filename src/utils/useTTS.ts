@@ -3,7 +3,7 @@ import type { GuildMember, Message, VoiceChannel } from "discord.js";
 import { ChannelRegistryService } from "../services/ChannelRegistryService";
 import { TTSQueue } from "../services/TTSQueue";
 import { TTSService } from "../services/TTSService";
-import { logError, logInfo } from "../utils/logger";
+import { logDebug, logError } from "../utils/logger";
 import { isSimpleSingText } from "../utils/ttsSing/format";
 import { formatTTSInput } from "./ttsTextFormatter";
 
@@ -30,7 +30,7 @@ export async function handleTTS(message: Message): Promise<void> {
 	if (!channelRegistry.isRegistered(message.guild.id, message.channelId)) {
 		return;
 	}
-	logInfo(`TTS: 登録済みチャンネル ${message.channelId} を監視しています`);
+	logDebug(`TTS: 登録済みチャンネル ${message.channelId} を監視しています`);
 
 	// コマンドメッセージは無視（スラッシュコマンド）
 	if (message.content.startsWith("/")) return;
@@ -40,12 +40,12 @@ export async function handleTTS(message: Message): Promise<void> {
 	const voiceChannel = member?.voice.channel as VoiceChannel;
 
 	if (!voiceChannel) {
-		logInfo(
+		logDebug(
 			`TTS: ユーザー ${message.author.username} はボイスチャンネルにいません`,
 		);
 		return;
 	}
-	logInfo(
+	logDebug(
 		`TTS: ユーザー ${message.author.username} はボイスチャンネル ${voiceChannel.name} にいます`,
 	);
 
@@ -55,13 +55,13 @@ export async function handleTTS(message: Message): Promise<void> {
 
 	// 既存接続がない場合は処理しない（自動接続を防止）
 	if (!existingConnection) {
-		logInfo("TTS: ボットがボイスチャンネルに参加していません");
+		logDebug("TTS: ボットがボイスチャンネルに参加していません");
 		return;
 	}
 
 	// 接続先が別のチャンネルである場合は処理しない
 	if (currentVoiceChannelId !== voiceChannel.id) {
-		logInfo(
+		logDebug(
 			`TTS: ボットが別のボイスチャンネルに参加しています (現在: ${currentVoiceChannelId}, ユーザー: ${voiceChannel.id})`,
 		);
 		return;
@@ -69,7 +69,7 @@ export async function handleTTS(message: Message): Promise<void> {
 
 	// TTSキューの状態をログ
 	const ttsQueue = TTSQueue.getInstance();
-	logInfo(`TTSキュー状態: 待機中=${ttsQueue.getQueueLength()}`);
+	logDebug(`TTSキュー状態: 待機中=${ttsQueue.getQueueLength()}`);
 
 	// TTSで読み上げ（キューに追加）
 	try {
@@ -78,7 +78,7 @@ export async function handleTTS(message: Message): Promise<void> {
 			? message.content
 			: formatTTSInput(message.content, message.guild);
 		await ttsService.speak(content, voiceChannel, message.author.id, isSing);
-		logInfo(
+		logDebug(
 			`TTS読み上げキューに追加: ${content}, サーバー: ${message.guild.name}`,
 		);
 	} catch (error) {

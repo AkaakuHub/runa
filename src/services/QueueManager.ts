@@ -1,4 +1,4 @@
-import { logInfo } from "../../src/utils/logger";
+import { logDebug } from "../../src/utils/logger";
 
 export class QueueManager {
 	private static instance: QueueManager;
@@ -27,7 +27,7 @@ export class QueueManager {
 
 		// 重複チェック
 		if (queue.includes(url)) {
-			logInfo(
+			logDebug(
 				`重複URLを検出、キューに追加しません: ${url}, ギルド: ${guildId}`,
 			);
 			return queue.length;
@@ -35,7 +35,7 @@ export class QueueManager {
 
 		queue.push(url);
 
-		logInfo(`キューに追加: ${url}, ギルド: ${guildId}, 位置: ${queue.length}`);
+		logDebug(`キューに追加: ${url}, ギルド: ${guildId}, 位置: ${queue.length}`);
 		return queue.length;
 	}
 
@@ -89,7 +89,7 @@ export class QueueManager {
 		const index = queue.indexOf(url);
 		if (index > -1) {
 			queue.splice(index, 1);
-			logInfo(`キューから削除: ${url}, ギルド: ${guildId}`);
+			logDebug(`キューから削除: ${url}, ギルド: ${guildId}`);
 			return true;
 		}
 		return false;
@@ -103,7 +103,7 @@ export class QueueManager {
 		if (clearHistory) {
 			this.queueHistory.set(guildId, []);
 		}
-		logInfo(
+		logDebug(
 			`キューをクリア: ギルド ${guildId}${clearHistory ? " (履歴もクリア)" : ""}`,
 		);
 	}
@@ -150,7 +150,7 @@ export class QueueManager {
 		}
 
 		this.queues.set(guildId, queue);
-		logInfo(`キューを履歴から復元: ギルド ${guildId}, ${queue.length}曲`);
+		logDebug(`キューを履歴から復元: ギルド ${guildId}, ${queue.length}曲`);
 		return true;
 	}
 

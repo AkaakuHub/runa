@@ -1,5 +1,5 @@
 import type { Interaction } from "discord.js";
-import { logError, logInfo } from "../utils/logger";
+import { logDebug, logError } from "../utils/logger";
 import { getCommandByName } from "../utils/useCommands";
 import "../commands";
 
@@ -16,13 +16,13 @@ export const interactionCreateHandler = async (
 		if (command) {
 			// interactionがまだ有効か確認
 			if (interaction.replied || interaction.deferred) {
-				logInfo(`Interaction already handled for command: ${commandName}`);
+				logDebug(`Interaction already handled for command: ${commandName}`);
 				return;
 			}
 
 			await command.execute(interaction);
 		} else {
-			logInfo(`Unknown command: ${commandName}`);
+			logDebug(`Unknown command: ${commandName}`);
 		}
 	} catch (error) {
 		logError(`Error handling interaction: ${error}`);

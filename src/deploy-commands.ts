@@ -1,13 +1,11 @@
 import { REST, Routes } from "discord.js";
 import { config } from "./config/config";
-import { logError, logInfo } from "./utils/logger";
+import { logDebug, logError, logInfo } from "./utils/logger";
 import { getCommandBuilders } from "./utils/useCommands";
 import "./commands";
 
 if (!config.token || !config.clientId || !config.guildId) {
-	console.error(
-		"環境変数が設定されていません。.env ファイルを確認してください。",
-	);
+	logError("環境変数が設定されていません。.env ファイルを確認してください。");
 	process.exit(1);
 }
 
@@ -52,10 +50,8 @@ if (!shouldReset && !shouldResetGlobal && !shouldResetOnly) {
 		const commands = getCommandBuilders();
 
 		// 登録されようとしているコマンドの内容を確認
-		console.log(
-			"登録しようとしているコマンド:",
-			JSON.stringify(commands, null, 2),
-		);
+		logDebug("登録しようとしているコマンド:");
+		logDebug(JSON.stringify(commands, null, 2));
 
 		logInfo(`${commands.length}個のスラッシュコマンドを登録しています...`);
 
@@ -69,6 +65,6 @@ if (!shouldReset && !shouldResetGlobal && !shouldResetOnly) {
 	} catch (error) {
 		logError(`コマンドの登録中にエラーが発生しました: ${error}`);
 		// エラーの詳細情報を出力
-		console.error("詳細:", error);
+		logError(`詳細: ${error}`);
 	}
 })();

@@ -1,15 +1,15 @@
-import * as cron from "node-cron";
 import {
-	type Client,
 	ChannelType,
-	type TextChannel,
 	type ChatInputCommandInteraction,
+	type Client,
+	type TextChannel,
 } from "discord.js";
+import * as cron from "node-cron";
 import { generateDailySummary } from "../commands/DailySummary";
-import { splitMessage } from "./messageUtils";
-import { logInfo, logError } from "./logger";
 import { dailyChannelService } from "../services/DailyChannelService";
 import { getCurrentJSTDateString } from "./dateUtils";
+import { logDebug, logError, logInfo, logWarn } from "./logger";
+import { splitMessage } from "./messageUtils";
 
 export function setupDailySummaryScheduler(client: Client): void {
 	cron.schedule(
@@ -17,14 +17,14 @@ export function setupDailySummaryScheduler(client: Client): void {
 		async () => {
 			try {
 				logInfo("🕒 Daily summary cron job triggered at 23:50 JST");
-				logInfo("Starting scheduled daily summary generation...");
+				logDebug("Starting scheduled daily summary generation...");
 
 				const guilds = client.guilds.cache;
-				logInfo(`Found ${guilds.size} guilds to process`);
+				logDebug(`Found ${guilds.size} guilds to process`);
 
 				for (const [, guild] of guilds) {
 					try {
-						logInfo(`Processing guild: ${guild.name} (${guild.id})`);
+						logDebug(`Processing guild: ${guild.name} (${guild.id})`);
 						const summaryChannelId = dailyChannelService.getSummaryChannel(
 							guild.id,
 						);
@@ -32,20 +32,20 @@ export function setupDailySummaryScheduler(client: Client): void {
 							guild.id,
 						);
 
-						logInfo(`Summary channel ID: ${summaryChannelId}`);
-						logInfo(
+						logDebug(`Summary channel ID: ${summaryChannelId}`);
+						logDebug(
 							`Configured channel IDs: [${configuredChannelIds.join(", ")}]`,
 						);
 
 						if (!summaryChannelId) {
-							logInfo(
+							logWarn(
 								`❌ No summary channel configured for guild ${guild.name}`,
 							);
 							continue;
 						}
 
 						if (configuredChannelIds.length === 0) {
-							logInfo(
+							logWarn(
 								`❌ No daily summary channels configured for guild ${guild.name}`,
 							);
 							continue;
@@ -74,7 +74,7 @@ export function setupDailySummaryScheduler(client: Client): void {
 						} as unknown as ChatInputCommandInteraction;
 
 						// 全ての対象チャンネルからメッセージを収集してサマリーを生成
-						logInfo(`Generating summary for guild ${guild.name}...`);
+						logDebug(`Generating summary for guild ${guild.name}...`);
 						// 時間シードの可能性があるので0~2秒の間で、ミリ秒単位でランダムに待機
 						const delayMs = Math.floor(Math.random() * 2000);
 						await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -82,7 +82,7 @@ export function setupDailySummaryScheduler(client: Client): void {
 							mockInteraction,
 							configuredChannelIds,
 						);
-						logInfo(`Summary generated, length: ${summary.length} characters`);
+						logDebug(`Summary generated, length: ${summary.length} characters`);
 
 						if (
 							summary.includes(
@@ -90,7 +90,7 @@ export function setupDailySummaryScheduler(client: Client): void {
 							) ||
 							summary.includes("今日はメッセージが見つかりませんでした")
 						) {
-							logInfo(
+							logWarn(
 								`⚠️ Skipping guild ${guild.name} - no content to summarize`,
 							);
 							continue;
@@ -104,7 +104,7 @@ export function setupDailySummaryScheduler(client: Client): void {
 						if (summaryWithDate.length <= 2000) {
 							await targetChannel.send(summaryWithDate);
 						} else {
-							logInfo(
+							logDebug(
 								`Message too long (${summaryWithDate.length} chars), splitting...`,
 							);
 							const chunks = splitMessage(summaryWithDate, 2000);

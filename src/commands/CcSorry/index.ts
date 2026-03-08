@@ -1,12 +1,13 @@
-import {
-	type ChatInputCommandInteraction,
-	AttachmentBuilder,
-} from "discord.js";
-import sharp from "sharp";
 import * as d3 from "d3";
+import {
+	AttachmentBuilder,
+	type ChatInputCommandInteraction,
+} from "discord.js";
 import { JSDOM } from "jsdom";
+import sharp from "sharp";
 import type { CommandDefinition } from "../../types";
 import { getCurrentJSTDate, getLocalDateString } from "../../utils/dateUtils";
+import { logError } from "../../utils/logger";
 import { generateAiText } from "../../utils/useAI";
 
 // Geminiを使って反省文を株式会社Anthropicの謝罪文に整形
@@ -31,7 +32,7 @@ ${originalText}
 	try {
 		return await generateAiText(prompt);
 	} catch (error) {
-		console.error("Gemini API呼び出しエラー:", error);
+		logError(`Gemini API呼び出しエラー: ${error}`);
 		throw new Error("謝罪文の整形に失敗しました");
 	}
 };
@@ -254,7 +255,7 @@ const CcSorryCommand: CommandDefinition = {
 				files: [attachment],
 			});
 		} catch (error) {
-			console.error("CcSorryコマンドでエラーが発生しました:", error);
+			logError(`CcSorryコマンドでエラーが発生しました: ${error}`);
 			await interaction.editReply("画像の生成中にエラーが発生しました。");
 		}
 	},

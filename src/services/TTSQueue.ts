@@ -1,6 +1,6 @@
 import type { VoiceChannel } from "discord.js";
 import { TTSService } from "../services/TTSService";
-import { logError, logInfo } from "../utils/logger";
+import { logDebug, logError } from "../utils/logger";
 
 interface TTSQueueItem {
 	id: string;
@@ -47,7 +47,7 @@ export class TTSQueue {
 			};
 
 			this.queue.push(item);
-			logInfo(`TTSキューに追加: ${id} (全キュー:${this.queue.length})`);
+			logDebug(`TTSキューに追加: ${id} (全キュー:${this.queue.length})`);
 
 			if (!this.isProcessing) {
 				this.processQueue();
@@ -59,13 +59,13 @@ export class TTSQueue {
 		if (this.isProcessing) return;
 
 		this.isProcessing = true;
-		logInfo("TTSキューの処理を開始");
+		logDebug("TTSキューの処理を開始");
 
 		try {
 			while (this.queue.length > 0) {
 				const item = this.queue.shift();
 				if (!item) continue;
-				logInfo(`TTS処理開始: ${item.id} (残り:${this.queue.length})`);
+				logDebug(`TTS処理開始: ${item.id} (残り:${this.queue.length})`);
 
 				try {
 					// TTSServiceに直接処理を任せる（接続管理も含めて）
@@ -78,7 +78,7 @@ export class TTSQueue {
 					);
 
 					item.resolve(success);
-					logInfo(`TTS処理完了: ${item.id} (成功:${success})`);
+					logDebug(`TTS処理完了: ${item.id} (成功:${success})`);
 				} catch (error) {
 					logError(`TTS処理失敗: ${item.id}, ${error}`);
 					item.reject(error);
@@ -88,7 +88,7 @@ export class TTSQueue {
 			logError(`TTSキュー処理エラー: ${error}`);
 		} finally {
 			this.isProcessing = false;
-			logInfo("TTSキューの処理が完了");
+			logDebug("TTSキューの処理が完了");
 		}
 	}
 
@@ -108,6 +108,6 @@ export class TTSQueue {
 
 		this.queue = [];
 		this.isProcessing = false;
-		logInfo("TTSキューをクリアしました");
+		logDebug("TTSキューをクリアしました");
 	}
 }

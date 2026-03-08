@@ -13,10 +13,10 @@ import {
 	type TextChannel,
 	type VoiceChannel,
 } from "discord.js";
-import { logError, logInfo } from "../../src/utils/logger";
+import { logDebug, logError, logInfo, logWarn } from "../../src/utils/logger";
 import {
-	streamYoutubeAudio,
 	sanitizeYoutubeUrl,
+	streamYoutubeAudio,
 	updateYtdlp,
 } from "../utils/youtubeUtils";
 import { QueueManager } from "./QueueManager";
@@ -49,26 +49,26 @@ export class MusicService {
 
 		// 詳細なイベントリスナー追加
 		this.player.on(AudioPlayerStatus.Playing, () => {
-			logInfo("プレイヤー状態: 再生中");
+			logDebug("プレイヤー状態: 再生中");
 		});
 
 		this.player.on(AudioPlayerStatus.Idle, () => {
-			logInfo("プレイヤー状態: アイドル状態");
+			logDebug("プレイヤー状態: アイドル状態");
 			this.isPlaying = false;
 			this.retryCount = 0; // 再試行カウンターをリセット
 			// playNextの呼び出しを削除 - 各再生処理内で個別にハンドリングするため
 		});
 
 		this.player.on(AudioPlayerStatus.Buffering, () => {
-			logInfo("プレイヤー状態: バッファリング中");
+			logDebug("プレイヤー状態: バッファリング中");
 		});
 
 		this.player.on(AudioPlayerStatus.Paused, () => {
-			logInfo("プレイヤー状態: 一時停止中");
+			logDebug("プレイヤー状態: 一時停止中");
 		});
 
 		this.player.on(AudioPlayerStatus.AutoPaused, () => {
-			logInfo("プレイヤー状態: 自動一時停止");
+			logDebug("プレイヤー状態: 自動一時停止");
 		});
 
 		this.player.on("error", (error) => {
@@ -200,7 +200,7 @@ export class MusicService {
 
 			// 接続時のイベントハンドラを詳細化
 			connection.on("stateChange", (oldState, newState) => {
-				logInfo(`接続状態の変更: ${oldState.status} -> ${newState.status}`);
+				logDebug(`接続状態の変更: ${oldState.status} -> ${newState.status}`);
 			});
 
 			// 接続エラー時のハンドラ
@@ -225,7 +225,7 @@ export class MusicService {
 						if (newState.status === "ready") {
 							clearTimeout(timeout);
 							connection.off("stateChange", stateChangeHandler);
-							logInfo("ボイス接続の準備完了");
+							logDebug("ボイス接続の準備完了");
 							ready = true;
 							resolve();
 						}
@@ -286,7 +286,7 @@ export class MusicService {
 				this.currentTextChannel = undefined; // テキストチャンネルもクリア
 				return true;
 			}
-			logInfo(`ボイスチャンネル退出試行、接続なし: ${guildId}`);
+			logDebug(`ボイスチャンネル退出試行、接続なし: ${guildId}`);
 			return false;
 		} catch (error) {
 			logError(`ボイスチャンネル切断エラー: ${error}`);
@@ -342,7 +342,7 @@ export class MusicService {
 
 	public async playNext(): Promise<void> {
 		if (this.isPlaying || !this.currentTextChannel) {
-			logInfo(
+			logDebug(
 				`playNext中止: isPlaying=${this.isPlaying}, currentTextChannel=${!!this.currentTextChannel}`,
 			);
 			return;
@@ -353,7 +353,7 @@ export class MusicService {
 
 		// 失敗したURLをスキップして有効な次のアイテムを探す
 		while (nextItem && this.failedUrls.has(nextItem)) {
-			logInfo(`失敗したURLをスキップ: ${nextItem}`);
+			logDebug(`失敗したURLをスキップ: ${nextItem}`);
 			nextItem = this.queueManager.getNextInQueue(guildId);
 		}
 
@@ -370,7 +370,7 @@ export class MusicService {
 		}
 
 		// 接続状態をログに出力
-		logInfo(`playNext: 現在の接続状態: ${connection.state.status}`);
+		logDebug(`playNext: 現在の接続状態: ${connection.state.status}`);
 		if (connection.state.status !== "ready") {
 			logError(
 				`playNext: 接続が準備完了ではありません (${connection.state.status})`,
@@ -378,7 +378,7 @@ export class MusicService {
 		}
 
 		if (!nextItem) {
-			logInfo("playNext: 再生キューは空です");
+			logDebug("playNext: 再生キューは空です");
 			await this.updateStatusMessage(
 				"再生キューが空になりました",
 				0xffaa00, // オレンジ色
@@ -391,13 +391,13 @@ export class MusicService {
 			this.isPlaying = true;
 
 			// まずストリーミングを試みる
-			logInfo(`playNext: ストリーミング再生を試みます: ${nextItem}`);
+			logDebug(`playNext: ストリーミング再生を試みます: ${nextItem}`);
 			const streamingSuccess = await this.playWithStreaming(nextItem, guildId);
 
 			if (streamingSuccess) {
 				// ストリーミング成功時のイベントハンドリング
 				this.player.once(AudioPlayerStatus.Idle, () => {
-					logInfo("playNext: ストリーミング再生完了");
+					logDebug("playNext: ストリーミング再生完了");
 					this.isPlaying = false;
 					this.currentPlayingUrl = undefined;
 					this.retryCount = 0;
@@ -426,7 +426,7 @@ export class MusicService {
 			}
 
 			// ストリーミング失敗時は従来のダウンロード方式にフォールバック
-			logInfo(
+			logDebug(
 				`playNext: ストリーミング失敗、ダウンロード方式にフォールバック: ${nextItem}`,
 			);
 			await this.updateStatusMessage(
@@ -445,10 +445,10 @@ export class MusicService {
 			this.currentPlayingUrl = nextItem;
 
 			// プレイヤーが接続に正しくサブスクライブされていることを確認 (再サブスクライブ)
-			logInfo("playNext: プレイヤーをボイス接続にサブスクライブ中...");
+			logDebug("playNext: プレイヤーをボイス接続にサブスクライブ中...");
 			const subscription = connection.subscribe(this.player);
 			if (subscription) {
-				logInfo("playNext: プレイヤーのサブスクライブ成功");
+				logDebug("playNext: プレイヤーのサブスクライブ成功");
 			} else {
 				logError("playNext: プレイヤーのサブスクライブに失敗");
 				await this.updateStatusMessage(
@@ -464,7 +464,7 @@ export class MusicService {
 			// 音量設定 (現在のリソースに対して)
 			if (this.currentResource?.volume) {
 				this.currentResource.volume.setVolume(this.currentVolume);
-				logInfo(`playNext: 音量を${this.currentVolume * 100}%に設定しました`);
+				logDebug(`playNext: 音量を${this.currentVolume * 100}%に設定しました`);
 			}
 
 			// ステータス更新
@@ -475,11 +475,11 @@ export class MusicService {
 			);
 
 			// 再生開始
-			logInfo("playNext: 音声の再生を開始しました");
+			logDebug("playNext: 音声の再生を開始しました");
 
 			// 再生終了後にファイルを削除するため、ステータス監視
 			this.player.once(AudioPlayerStatus.Idle, () => {
-				logInfo("playNext: AudioPlayerStatus.Idle イベント発生");
+				logDebug("playNext: AudioPlayerStatus.Idle イベント発生");
 				this.isPlaying = false;
 				this.currentPlayingUrl = undefined;
 				this.retryCount = 0;
@@ -541,7 +541,7 @@ export class MusicService {
 			if (this.currentResource?.volume) {
 				this.currentResource.volume.setVolume(normalizedVolume);
 				this.currentVolume = normalizedVolume; // 現在の音量を保存
-				logInfo(`音量を${level}%に設定しました`);
+				logDebug(`音量を${level}%に設定しました`);
 				return true;
 			}
 			logError("音量を設定できる再生リソースがありません");
@@ -626,7 +626,7 @@ export class MusicService {
 
 		if (this.retryCount < this.maxRetries) {
 			this.retryCount++;
-			logInfo(
+			logWarn(
 				`再生エラー: ${this.retryCount}回目の再試行 - ${this.currentPlayingUrl}`,
 			);
 
@@ -667,7 +667,7 @@ export class MusicService {
 		guildId: string,
 	): Promise<boolean> {
 		try {
-			logInfo(`ストリーミング再生開始: ${url}`);
+			logDebug(`ストリーミング再生開始: ${url}`);
 
 			await this.updateStatusMessage(
 				"ストリーミング再生を準備中...",
@@ -727,7 +727,7 @@ export class MusicService {
 
 			// 再生開始
 			this.player.play(resource);
-			logInfo("ストリーミング再生を開始しました");
+			logDebug("ストリーミング再生を開始しました");
 
 			return true;
 		} catch (error) {

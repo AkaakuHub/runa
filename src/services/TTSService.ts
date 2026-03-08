@@ -8,7 +8,7 @@ import {
 } from "@discordjs/voice";
 import type { VoiceChannel } from "discord.js";
 import { readJsonFileSync, writeJsonFileSync } from "../utils/jsonFile";
-import { logError, logInfo } from "../utils/logger";
+import { logDebug, logError, logInfo } from "../utils/logger";
 import { parseSimpleSingScore } from "../utils/ttsSing/format";
 import { synthesizeSingVoice } from "../utils/ttsSing/synthesis";
 import { TTSQueue } from "./TTSQueue";
@@ -146,7 +146,7 @@ export class TTSService {
 		try {
 			if (existsSync(audioFile)) {
 				rmSync(audioFile);
-				logInfo(`音声ファイルを削除しました: ${audioFile}`);
+				logDebug(`音声ファイルを削除しました: ${audioFile}`);
 			}
 		} catch (error) {
 			logError(`音声ファイル削除エラー: ${error}`);
@@ -159,7 +159,7 @@ export class TTSService {
 	private async loadVoiceCharacters(): Promise<void> {
 		try {
 			await this.getVoiceCharacters();
-			logInfo(
+			logDebug(
 				`${this.voiceCharacters.length}個の音声キャラクターを読み込みました`,
 			);
 		} catch (error) {
@@ -267,7 +267,7 @@ export class TTSService {
 		isSing?: boolean,
 	): Promise<boolean> {
 		if (!this.config.enabled) {
-			logInfo("TTS機能が無効のため、音声再生をスキップします");
+			logDebug("TTS機能が無効のため、音声再生をスキップします");
 			return false;
 		}
 
@@ -285,7 +285,7 @@ export class TTSService {
 		isSing = false,
 	): Promise<boolean> {
 		if (!this.config.enabled) {
-			logInfo("TTS機能が無効のため、音声再生をスキップします");
+			logDebug("TTS機能が無効のため、音声再生をスキップします");
 			return false;
 		}
 
@@ -331,7 +331,7 @@ export class TTSService {
 					this.cleanupAudioFile(audioFile);
 					if (this.skipCurrentPlayback) {
 						this.skipCurrentPlayback = false;
-						logInfo("現在のTTSをスキップしました");
+						logDebug("現在のTTSをスキップしました");
 						break;
 					}
 					if (!playbackSuccess) {
@@ -382,7 +382,7 @@ export class TTSService {
 				`tts-temp-sing-${timestamp}.wav`,
 			);
 			writeFileSync(tempFile, Buffer.from(result.audioData));
-			logInfo(`歌声音声ファイルを生成しました: ${tempFile}`);
+			logDebug(`歌声音声ファイルを生成しました: ${tempFile}`);
 			return tempFile;
 		} catch (error) {
 			logError(`歌声生成エラー: ${error}`);
@@ -518,7 +518,7 @@ export class TTSService {
 
 			// 一時ファイルに保存
 			writeFileSync(tempFile, Buffer.from(audioData));
-			logInfo(`音声ファイルを生成しました: ${tempFile}`);
+			logDebug(`音声ファイルを生成しました: ${tempFile}`);
 
 			return tempFile;
 		} catch (error) {
@@ -553,7 +553,7 @@ export class TTSService {
 
 			// 音楽が再生中の場合は一時停止
 			if (wasMusicPlaying) {
-				logInfo("TTS: 音楽を一時停止します");
+				logDebug("TTS: 音楽を一時停止します");
 				musicService.pauseMusic();
 			}
 
@@ -567,7 +567,7 @@ export class TTSService {
 
 			// 音楽が再生中の場合は一時停止
 			if (wasMusicPlaying) {
-				logInfo("TTS: 音楽を一時停止します");
+				logDebug("TTS: 音楽を一時停止します");
 				musicService.pauseMusic();
 			}
 
@@ -578,14 +578,14 @@ export class TTSService {
 			this.isPlaying = true;
 			this.currentAudioFile = audioFile;
 
-			logInfo("TTS音声の再生を開始しました");
+			logDebug("TTS音声の再生を開始しました");
 
 			// 再生完了を待機
 			const result = await this.waitForPlaybackComplete(musicPlayer);
 
 			// TTS再生終了後に音楽を再開
 			if (wasMusicPlaying) {
-				logInfo("TTS: 音楽を再開します");
+				logDebug("TTS: 音楽を再開します");
 				await new Promise((resolve) => setTimeout(resolve, 300)); // 少し待ってから再開
 				musicService.resumeMusic();
 			}
@@ -638,7 +638,7 @@ export class TTSService {
 					this.currentAudioFile = null;
 				}
 
-				logInfo("TTS用ボイスチャンネルから切断しました");
+				logDebug("TTS用ボイスチャンネルから切断しました");
 				return true;
 			}
 			return false;

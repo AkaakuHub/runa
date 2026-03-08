@@ -2,7 +2,7 @@ import { Client, GatewayIntentBits } from "discord.js";
 import * as dotenv from "dotenv";
 import { config } from "./config/config";
 import { setupEventListeners } from "./events";
-import { logInfo } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { setupDailySummaryScheduler } from "./utils/scheduler";
 
 // 環境変数の読み込みを確実に行う
@@ -33,9 +33,7 @@ setupEventListeners(client);
 
 // ボットのログイン
 if (!config.token) {
-	console.error(
-		"トークンが設定されていません。.env ファイルを確認してください。",
-	);
+	logError("トークンが設定されていません。.env ファイルを確認してください。");
 	process.exit(1);
 }
 
