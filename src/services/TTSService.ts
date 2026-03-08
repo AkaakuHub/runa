@@ -1,13 +1,14 @@
+import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
-	AudioPlayerStatus,
 	type AudioPlayer,
+	AudioPlayerStatus,
 	createAudioResource,
 	getVoiceConnection,
 } from "@discordjs/voice";
 import type { VoiceChannel } from "discord.js";
+import { readJsonFileSync, writeJsonFileSync } from "../utils/jsonFile";
 import { logError, logInfo } from "../utils/logger";
-import { existsSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { TTSQueue } from "./TTSQueue";
 
 interface TTSConfig {
@@ -28,6 +29,13 @@ interface VoiceCharacter {
 	}>;
 }
 
+interface TTSPersistedSettings {
+	speed: number;
+	speaker: number;
+	userSpeakers: Record<string, number>;
+	guildSpeeds: Record<string, number>;
+}
+
 export class TTSService {
 	private static instance: TTSService;
 	private config: TTSConfig;
@@ -35,6 +43,9 @@ export class TTSService {
 	private isPlaying = false;
 	private currentAudioFile: string | null = null;
 	private ttsQueue: TTSQueue;
+	private userSpeakers: Map<string, number> = new Map();
+	private guildSpeeds: Map<string, number> = new Map();
+	private settingsPath = join(process.cwd(), "data", "tts-settings.json");
 
 	private constructor() {
 		// デフォルト設定
@@ -46,6 +57,7 @@ export class TTSService {
 			pitch: 0.0,
 			enabled: false,
 		};
+		this.loadPersistedSettings();
 
 		this.ttsQueue = TTSQueue.getInstance();
 		this.setupEventListeners();
@@ -61,6 +73,44 @@ export class TTSService {
 			TTSService.instance = new TTSService();
 		}
 		return TTSService.instance;
+	}
+
+	private loadPersistedSettings(): void {
+		const persisted = readJsonFileSync<Partial<TTSPersistedSettings>>(
+			this.settingsPath,
+			{},
+		);
+
+		if (typeof persisted.speed === "number") {
+			this.config.speed = Math.max(0.5, Math.min(2.0, persisted.speed));
+		}
+		if (typeof persisted.speaker === "number") {
+			this.config.speaker = persisted.speaker;
+		}
+		if (persisted.userSpeakers && typeof persisted.userSpeakers === "object") {
+			for (const [userId, speaker] of Object.entries(persisted.userSpeakers)) {
+				if (typeof speaker === "number") {
+					this.userSpeakers.set(userId, speaker);
+				}
+			}
+		}
+		if (persisted.guildSpeeds && typeof persisted.guildSpeeds === "object") {
+			for (const [guildId, speed] of Object.entries(persisted.guildSpeeds)) {
+				if (typeof speed === "number") {
+					this.guildSpeeds.set(guildId, Math.max(0.5, Math.min(2.0, speed)));
+				}
+			}
+		}
+	}
+
+	private savePersistedSettings(): void {
+		const persisted: TTSPersistedSettings = {
+			speed: this.config.speed,
+			speaker: this.config.speaker,
+			userSpeakers: Object.fromEntries(this.userSpeakers),
+			guildSpeeds: Object.fromEntries(this.guildSpeeds),
+		};
+		writeJsonFileSync(this.settingsPath, persisted);
 	}
 
 	/**
@@ -131,7 +181,7 @@ export class TTSService {
 	/**
 	 * 音声キャラクターを設定
 	 */
-	public setSpeaker(speaker: number): boolean {
+	public setSpeaker(speaker: number, userId?: string): boolean {
 		if (this.voiceCharacters.length === 0) {
 			return false;
 		}
@@ -142,8 +192,16 @@ export class TTSService {
 		);
 
 		if (exists) {
-			this.config.speaker = speaker;
-			logInfo(`音声キャラクターを${speaker}に設定しました`);
+			if (userId) {
+				this.userSpeakers.set(userId, speaker);
+				logInfo(
+					`音声キャラクターを${speaker}に設定しました (userId=${userId})`,
+				);
+			} else {
+				this.config.speaker = speaker;
+				logInfo(`デフォルト音声キャラクターを${speaker}に設定しました`);
+			}
+			this.savePersistedSettings();
 			return true;
 		}
 
@@ -153,9 +211,23 @@ export class TTSService {
 	/**
 	 * 読み上げ速度を設定
 	 */
-	public setSpeed(speed: number): void {
-		this.config.speed = Math.max(0.5, Math.min(2.0, speed));
-		logInfo(`読み上げ速度を${this.config.speed}に設定しました`);
+	public setSpeed(speed: number, guildId?: string): void {
+		const normalizedSpeed = Math.max(0.5, Math.min(2.0, speed));
+		if (guildId) {
+			this.guildSpeeds.set(guildId, normalizedSpeed);
+		} else {
+			this.config.speed = normalizedSpeed;
+		}
+		this.savePersistedSettings();
+		logInfo(`読み上げ速度を${normalizedSpeed}に設定しました`);
+	}
+
+	public getSpeakerForUser(userId: string): number {
+		return this.userSpeakers.get(userId) ?? this.config.speaker;
+	}
+
+	public getSpeedForGuild(guildId: string): number {
+		return this.guildSpeeds.get(guildId) ?? this.config.speed;
 	}
 
 	/**
@@ -187,6 +259,7 @@ export class TTSService {
 	public async speak(
 		text: string,
 		voiceChannel: VoiceChannel,
+		userId?: string,
 	): Promise<boolean> {
 		if (!this.config.enabled) {
 			logInfo("TTS機能が無効のため、音声再生をスキップします");
@@ -194,7 +267,7 @@ export class TTSService {
 		}
 
 		// キューに追加
-		return this.ttsQueue.addToQueue(text, voiceChannel);
+		return this.ttsQueue.addToQueue(text, voiceChannel, userId);
 	}
 
 	/**
@@ -203,6 +276,7 @@ export class TTSService {
 	public async speakDirect(
 		text: string,
 		voiceChannel: VoiceChannel,
+		userId?: string,
 	): Promise<boolean> {
 		if (!this.config.enabled) {
 			logInfo("TTS機能が無効のため、音声再生をスキップします");
@@ -223,9 +297,13 @@ export class TTSService {
 			}
 
 			// 音声ファイルを生成して再生
+			const speaker = userId
+				? this.getSpeakerForUser(userId)
+				: this.config.speaker;
+			const speed = this.getSpeedForGuild(voiceChannel.guild.id);
 			let success = true;
 			for (const chunk of textChunks) {
-				const audioFile = await this.generateAudio(chunk);
+				const audioFile = await this.generateAudio(chunk, speaker, speed);
 				if (audioFile) {
 					const playbackSuccess = await this.playAudioAndWait(
 						audioFile,
@@ -313,7 +391,11 @@ export class TTSService {
 	/**
 	 * 音声ファイルを生成
 	 */
-	public async generateAudio(text: string): Promise<string | null> {
+	public async generateAudio(
+		text: string,
+		speaker: number,
+		speed: number,
+	): Promise<string | null> {
 		try {
 			// 一時ファイル名を生成（タイムスタンプベース）
 			const timestamp = Date.now();
@@ -326,7 +408,7 @@ export class TTSService {
 			// 音声クエリを作成
 			const params = new URLSearchParams();
 			params.append("text", text);
-			params.append("speaker", this.config.speaker.toString());
+			params.append("speaker", speaker.toString());
 
 			const queryResponse = await fetch(
 				`${this.config.voicevoxUrl}/audio_query?${params.toString()}`,
@@ -342,13 +424,13 @@ export class TTSService {
 			const audioQuery = await queryResponse.json();
 
 			// パラメータを設定
-			audioQuery.speedScale = this.config.speed;
+			audioQuery.speedScale = speed;
 			audioQuery.pitchScale = this.config.pitch;
 			audioQuery.volumeScale = this.config.volume;
 
 			// 音声を合成
 			const synthesisParams = new URLSearchParams();
-			synthesisParams.append("speaker", this.config.speaker.toString());
+			synthesisParams.append("speaker", speaker.toString());
 
 			const synthesisResponse = await fetch(
 				`${this.config.voicevoxUrl}/synthesis?${synthesisParams.toString()}`,

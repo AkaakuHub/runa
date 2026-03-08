@@ -1,8 +1,8 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import { MessageFlags } from "discord.js";
+import { TTSService } from "../../services/TTSService";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
-import { TTSService } from "../../services/TTSService";
 
 export const TTSCommand: CommandDefinition = {
 	name: "tts",
@@ -48,11 +48,15 @@ export const TTSCommand: CommandDefinition = {
 					break;
 				case "status": {
 					const config = ttsService.getConfig();
+					const userSpeaker = ttsService.getSpeakerForUser(interaction.user.id);
+					const guildSpeed = ttsService.getSpeedForGuild(interaction.guild.id);
 					const statusText = `
 **TTS機能設定**
 - 状態: ${config.enabled ? "✅ 有効" : "❌ 無効"}
-- 音声キャラクター: ${config.speaker}
-- 読み上げ速度: ${config.speed}
+- あなたの音声キャラクター: ${userSpeaker}
+- デフォルト音声キャラクター: ${config.speaker}
+- このサーバーの読み上げ速度: ${guildSpeed}
+- デフォルト読み上げ速度: ${config.speed}
 - 音量: ${Math.round(config.volume * 100)}%
 - 音高: ${config.pitch}
 - VOICEVOX URL: ${config.voicevoxUrl}

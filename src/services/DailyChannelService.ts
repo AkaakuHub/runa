@@ -1,5 +1,5 @@
-import fs from "node:fs/promises";
 import path from "node:path";
+import { readJsonFile, writeJsonFile } from "../utils/jsonFile";
 import { logError, logInfo } from "../utils/logger";
 
 interface DailyChannelConfig {
@@ -20,13 +20,22 @@ class DailyChannelService {
 
 	private async loadConfig(): Promise<void> {
 		try {
-			const data = await fs.readFile(this.configPath, "utf-8");
-			const rawConfig = JSON.parse(data);
+			const rawConfig = await readJsonFile<Record<string, unknown>>(
+				this.configPath,
+				{},
+			);
+			if (Object.keys(rawConfig).length === 0) {
+				logInfo(
+					"No existing daily channel config found, starting with empty config",
+				);
+				this.config = {};
+				return;
+			}
 
 			// 古い形式（string[]）から新しい形式への変換
 			for (const [guildId, value] of Object.entries(rawConfig)) {
 				if (Array.isArray(value)) {
-					this.config[guildId] = { channels: value };
+					this.config[guildId] = { channels: value as string[] };
 				} else {
 					this.config[guildId] = value as {
 						channels: string[];
@@ -46,7 +55,7 @@ class DailyChannelService {
 
 	private async saveConfig(): Promise<void> {
 		try {
-			await fs.writeFile(this.configPath, JSON.stringify(this.config, null, 2));
+			await writeJsonFile(this.configPath, this.config);
 			logInfo("Daily channel config saved");
 		} catch (error) {
 			logError(`Failed to save daily channel config: ${error}`);

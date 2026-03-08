@@ -1,11 +1,12 @@
 import type { VoiceChannel } from "discord.js";
-import { logInfo, logError } from "../utils/logger";
 import { TTSService } from "../services/TTSService";
+import { logError, logInfo } from "../utils/logger";
 
 interface TTSQueueItem {
 	id: string;
 	text: string;
 	voiceChannel: VoiceChannel;
+	userId?: string;
 	audioFiles: string[];
 	resolve: (value: boolean) => void;
 	reject: (reason?: unknown) => void;
@@ -28,6 +29,7 @@ export class TTSQueue {
 	public async addToQueue(
 		text: string,
 		voiceChannel: VoiceChannel,
+		userId?: string,
 	): Promise<boolean> {
 		return new Promise((resolve, reject) => {
 			const id = `tts_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
@@ -35,6 +37,7 @@ export class TTSQueue {
 				id,
 				text,
 				voiceChannel,
+				userId,
 				audioFiles: [],
 				resolve,
 				reject,
@@ -67,6 +70,7 @@ export class TTSQueue {
 					const success = await ttsService.speakDirect(
 						item.text,
 						item.voiceChannel,
+						item.userId,
 					);
 
 					item.resolve(success);

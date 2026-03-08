@@ -1,8 +1,8 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import { MessageFlags } from "discord.js";
+import { TTSService } from "../../services/TTSService";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
-import { TTSService } from "../../services/TTSService";
 import { replyLongMessage } from "../../utils/messageUtils";
 
 export const TTSSpeakersCommand: CommandDefinition = {
@@ -45,7 +45,8 @@ export const TTSSpeakersCommand: CommandDefinition = {
 			}
 
 			speakerList += "---\n";
-			speakerList += "使用例: `/tts_speaker speaker:3` (ずんだもん)";
+			speakerList +=
+				"使用例: `/tts_speaker speaker:3` (あなたの読み上げ話者を設定)";
 
 			await interaction.editReply({
 				content: "音声キャラクター一覧を取得しました。",

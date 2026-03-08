@@ -1,8 +1,8 @@
 import { getVoiceConnection } from "@discordjs/voice";
 import type { GuildMember, Message, VoiceChannel } from "discord.js";
 import { ChannelRegistryService } from "../services/ChannelRegistryService";
-import { TTSService } from "../services/TTSService";
 import { TTSQueue } from "../services/TTSQueue";
+import { TTSService } from "../services/TTSService";
 import { logError, logInfo } from "../utils/logger";
 
 /**
@@ -71,7 +71,7 @@ export async function handleTTS(message: Message): Promise<void> {
 
 	// TTSで読み上げ（キューに追加）
 	try {
-		await ttsService.speak(message.content, voiceChannel);
+		await ttsService.speak(message.content, voiceChannel, message.author.id);
 		logInfo(
 			`TTS読み上げキューに追加: ${message.content}, サーバー: ${message.guild.name}`,
 		);

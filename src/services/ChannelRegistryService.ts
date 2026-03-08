@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
-import { logInfo, logError } from "../utils/logger";
+import { readJsonFileSync, writeJsonFileSync } from "../utils/jsonFile";
+import { logError, logInfo } from "../utils/logger";
 
 /**
  * 音声コマンドを受け付けるチャンネルを管理するサービス
@@ -111,13 +111,7 @@ export class ChannelRegistryService {
 				data[guildId] = channels;
 			});
 
-			// データディレクトリが存在することを確認
-			const dirPath = path.dirname(this.dbFilePath);
-			if (!existsSync(dirPath)) {
-				mkdirSync(dirPath, { recursive: true });
-			}
-
-			writeFileSync(this.dbFilePath, JSON.stringify(data, null, 2));
+			writeJsonFileSync(this.dbFilePath, data);
 			logInfo("登録チャンネルデータをディスクに保存しました");
 		} catch (error) {
 			logError(`登録チャンネルの保存に失敗: ${error}`);
@@ -129,21 +123,26 @@ export class ChannelRegistryService {
 	 */
 	private loadFromDisk(): void {
 		try {
-			if (existsSync(this.dbFilePath)) {
-				const data = JSON.parse(readFileSync(this.dbFilePath, "utf8"));
-				this.registeredChannels.clear();
+			const data = readJsonFileSync<Record<string, string[]>>(
+				this.dbFilePath,
+				{},
+			);
 
-				// JSON オブジェクトを Map に変換
-				for (const [guildId, channels] of Object.entries(data)) {
-					this.registeredChannels.set(guildId, channels as string[]);
-				}
-
-				logInfo("登録チャンネルデータをディスクから読み込みました");
-			} else {
+			if (Object.keys(data).length === 0) {
 				logInfo(
 					"登録チャンネルのデータファイルが見つかりません。新規作成します。",
 				);
+				return;
 			}
+
+			this.registeredChannels.clear();
+
+			// JSON オブジェクトを Map に変換
+			for (const [guildId, channels] of Object.entries(data)) {
+				this.registeredChannels.set(guildId, channels as string[]);
+			}
+
+			logInfo("登録チャンネルデータをディスクから読み込みました");
 		} catch (error) {
 			logError(`登録チャンネルの読み込みに失敗: ${error}`);
 		}

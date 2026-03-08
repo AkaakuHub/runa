@@ -1,8 +1,8 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import { MessageFlags } from "discord.js";
+import { TTSService } from "../../services/TTSService";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
-import { TTSService } from "../../services/TTSService";
 
 export const TTSSpeakerCommand: CommandDefinition = {
 	name: "tts_speaker",
@@ -36,13 +36,15 @@ export const TTSSpeakerCommand: CommandDefinition = {
 				return;
 			}
 
-			const success = ttsService.setSpeaker(speaker);
+			const success = ttsService.setSpeaker(speaker, interaction.user.id);
 
 			if (success) {
 				await interaction.reply(
-					`TTSの音声キャラクターを話者ID ${speaker} に設定しました 🎤`,
+					`あなたのTTS音声キャラクターを話者ID ${speaker} に設定しました 🎤`,
 				);
-				logInfo(`TTS話者を${speaker}に設定しました`);
+				logInfo(
+					`TTS話者を${speaker}に設定しました (userId=${interaction.user.id})`,
+				);
 			} else {
 				await interaction.reply({
 					content:
