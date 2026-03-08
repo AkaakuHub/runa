@@ -42,6 +42,7 @@ export class TTSService {
 	private voiceCharacters: VoiceCharacter[] = [];
 	private isPlaying = false;
 	private currentAudioFile: string | null = null;
+	private skipCurrentPlayback = false;
 	private ttsQueue: TTSQueue;
 	private userSpeakers: Map<string, number> = new Map();
 	private guildSpeeds: Map<string, number> = new Map();
@@ -310,6 +311,11 @@ export class TTSService {
 						voiceChannel.guild.id,
 					);
 					this.cleanupAudioFile(audioFile);
+					if (this.skipCurrentPlayback) {
+						this.skipCurrentPlayback = false;
+						logInfo("現在のTTSをスキップしました");
+						break;
+					}
 					if (!playbackSuccess) {
 						success = false;
 					}
@@ -586,5 +592,27 @@ export class TTSService {
 	 */
 	public isCurrentlyPlaying(): boolean {
 		return this.isPlaying;
+	}
+
+	/**
+	 * 現在再生中のTTSを1件だけスキップ
+	 */
+	public async skipCurrent(): Promise<boolean> {
+		if (!this.isPlaying) {
+			return false;
+		}
+
+		try {
+			this.skipCurrentPlayback = true;
+
+			const { MusicService } = await import("../services/MusicService");
+			const musicService = MusicService.getInstance();
+			musicService.getPlayer().stop();
+			return true;
+		} catch (error) {
+			this.skipCurrentPlayback = false;
+			logError(`TTSスキップエラー: ${error}`);
+			return false;
+		}
 	}
 }
