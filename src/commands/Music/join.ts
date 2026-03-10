@@ -6,6 +6,7 @@ import type {
 } from "discord.js";
 import { MessageFlags } from "discord.js";
 import type { CommandDefinition } from "../../types";
+import { TTSService } from "../../services/TTSService";
 import { logError, logInfo } from "../../utils/logger";
 import { MusicService } from "../../services/MusicService";
 
@@ -51,8 +52,11 @@ export const JoinCommand: CommandDefinition = {
 			);
 
 			if (joined) {
+				const ttsService = TTSService.getInstance();
+				ttsService.setEnabled(true);
+
 				await interaction.editReply(
-					`ボイスチャンネル「${voiceChannel.name}」に参加しました。`,
+					`ボイスチャンネル「${voiceChannel.name}」に参加しました。TTSを有効にしました。`,
 				);
 				logInfo(
 					`ボイスチャンネル "${voiceChannel.name}" に参加: ${interaction.guild.name}`,
