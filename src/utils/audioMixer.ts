@@ -5,9 +5,9 @@ import type {
 import { spawn } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import {
-	type AudioResource,
-	createAudioResource,
 	StreamType,
+	createAudioResource,
+	type AudioResource,
 } from "@discordjs/voice";
 import { logDebug, logError } from "./logger";
 
@@ -309,41 +309,6 @@ export class RealtimeAudioMixer {
 		}
 
 		this.currentMusicDecoder = spawnPcmDecoder(["-i", "pipe:0"], stream);
-		this.currentMusicDecoder.stderr?.on("data", (data) => {
-			const text = data.toString().trim();
-			if (text) {
-				logError(`music decoder stderr: ${text}`);
-			}
-		});
-
-		if (!this.currentMusicDecoder.stdout) {
-			throw new Error("音楽デコーダーの stdout が取得できません");
-		}
-
-		await this.musicFeeder.pipeFrom(this.currentMusicDecoder.stdout);
-		await waitForProcessExit(this.currentMusicDecoder, "music decoder");
-		this.currentMusicDecoder = undefined;
-	}
-
-	public async playMusicUrl(url: string): Promise<void> {
-		if (this.stopped || !this.musicFeeder) {
-			return;
-		}
-
-		this.currentMusicDecoder = spawnPcmDecoder([
-			"-reconnect",
-			"1",
-			"-reconnect_streamed",
-			"1",
-			"-reconnect_at_eof",
-			"1",
-			"-reconnect_delay_max",
-			"5",
-			"-rw_timeout",
-			"15000000",
-			"-i",
-			url,
-		]);
 		this.currentMusicDecoder.stderr?.on("data", (data) => {
 			const text = data.toString().trim();
 			if (text) {
