@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-import { logError, logInfo } from "../../src/utils/logger";
 import type { Readable } from "node:stream";
+import { PassThrough } from "node:stream";
+import { logError, logInfo } from "../../src/utils/logger";
 
 // 一時的な音声ファイルを保存するディレクトリ
 /**
@@ -12,66 +13,107 @@ export async function streamYoutubeAudio(
 	try {
 		logInfo(`YouTubeオーディオのストリーミング開始: ${url}`);
 
-		// spawnを使用してバイナリストリームを正しく処理
+		// 音声専用フォーマットが存在しない動画向けに、音声付き通常動画までフォールバックする
 		const args = [
-			url,
 			"-f",
-			"bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio",
+			"bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio/best*[acodec!=none]/best",
 			"-o",
 			"-",
+			"--no-playlist",
 			"--no-mtime",
-			"--force-keyframes-at-cuts",
+			"--no-progress",
+			url,
 		];
 
-		const childProcess = spawn("yt-dlp", args);
+		const childProcess = spawn("yt-dlp", args, {
+			stdio: ["ignore", "pipe", "pipe"],
+		});
 
 		if (!childProcess.stdout) {
 			logError("ストリーミング: stdoutがありません");
 			return null;
 		}
 
-		let hasError = false;
+		let startupResolved = false;
+		let stderrBuffer = "";
+		const output = new PassThrough();
 
 		childProcess.stdout.on("error", (error) => {
 			logInfo(`yt-dlp stdout closed: ${error}`);
 		});
-		childProcess.stdout.once("close", () => {
-			if (childProcess.exitCode === null && !childProcess.killed) {
-				childProcess.kill("SIGKILL");
-			}
-		});
 
-		// エラーハンドリングを追加
 		childProcess.stderr?.on("data", (data) => {
-			// 重要なエラーのみログ出力
 			const errorMsg = data.toString();
+			stderrBuffer = `${stderrBuffer}${errorMsg}`.slice(-4000);
 			if (errorMsg.includes("ERROR") || errorMsg.includes("error")) {
 				logError(`yt-dlp stderr: ${errorMsg}`);
-				hasError = true;
 			}
 		});
 
-		childProcess.on("error", (error) => {
-			logError(`yt-dlp process error: ${error}`);
-			hasError = true;
+		return await new Promise<Readable | null>((resolve) => {
+			const cleanupStartupListeners = () => {
+				childProcess.stdout?.off("data", onFirstChunk);
+				childProcess.off("error", onProcessError);
+				childProcess.off("close", onProcessClose);
+			};
+
+			const failStartup = (reason: string) => {
+				if (startupResolved) {
+					return;
+				}
+				startupResolved = true;
+				cleanupStartupListeners();
+				output.destroy();
+				if (childProcess.exitCode === null && !childProcess.killed) {
+					childProcess.kill("SIGKILL");
+				}
+				logError(reason);
+				resolve(null);
+			};
+
+			const onFirstChunk = (chunk: Buffer) => {
+				if (startupResolved) {
+					return;
+				}
+				startupResolved = true;
+				cleanupStartupListeners();
+				output.write(chunk);
+				childProcess.stdout?.pipe(output);
+				logInfo(`ストリーミング開始成功: ${url}`);
+				resolve(output);
+			};
+
+			const onProcessError = (error: Error) => {
+				failStartup(`yt-dlp process error: ${error}`);
+			};
+
+			const onProcessClose = (
+				code: number | null,
+				signal: NodeJS.Signals | null,
+			) => {
+				if (startupResolved) {
+					if (!output.destroyed) {
+						output.end();
+					}
+					if (code !== 0 && signal !== "SIGTERM" && signal !== "SIGKILL") {
+						const detail = stderrBuffer.trim();
+						logError(
+							`yt-dlp exited during stream code=${code} signal=${signal}${detail ? ` stderr=${detail}` : ""}`,
+						);
+					}
+					return;
+				}
+
+				const detail = stderrBuffer.trim();
+				failStartup(
+					`yt-dlp exited before stream startup code=${code} signal=${signal}${detail ? ` stderr=${detail}` : ""}`,
+				);
+			};
+
+			childProcess.stdout?.once("data", onFirstChunk);
+			childProcess.once("error", onProcessError);
+			childProcess.once("close", onProcessClose);
 		});
-
-		childProcess.on("exit", (code) => {
-			if (code !== 0 && !hasError) {
-				logError(`yt-dlp exited with code ${code}`);
-				hasError = true;
-			}
-		});
-
-		logInfo(`ストリーミング開始成功: ${url}`);
-
-		// エラー情報をストリームに追加
-		if (hasError) {
-			// エラーがある場合はnullを返してエラーを伝達
-			return null;
-		}
-
-		return childProcess.stdout;
 	} catch (error) {
 		logError(`YouTubeストリーミングエラー: ${error}`);
 		return null;
