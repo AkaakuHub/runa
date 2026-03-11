@@ -14,13 +14,13 @@ import {
 } from "discord.js";
 import { logDebug, logError, logInfo, logWarn } from "../../src/utils/logger";
 import { RealtimeAudioMixer } from "../utils/audioMixer";
-import { TTSService } from "./TTSService";
 import {
+	resolveYoutubeAudioUrl,
 	sanitizeYoutubeUrl,
-	streamYoutubeAudio,
 	updateYtdlp,
 } from "../utils/youtubeUtils";
 import { QueueManager } from "./QueueManager";
+import { TTSService } from "./TTSService";
 
 export class MusicService {
 	private static instance: MusicService;
@@ -31,7 +31,6 @@ export class MusicService {
 	private currentResource: {
 		volume?: { setVolume: (volume: number) => void };
 	} | null = null;
-	private currentVolume = 0.1;
 	private currentPlayingUrl?: string;
 	private statusMessage?: Message;
 	private retryCount = 0;
@@ -146,9 +145,6 @@ export class MusicService {
 		textChannel: TextChannel,
 	): Promise<boolean> {
 		try {
-			this.currentVolume = TTSService.getInstance().getMusicVolumeForGuild(
-				voiceChannel.guild.id,
-			);
 			const existingConnection = getVoiceConnection(voiceChannel.guild.id);
 			if (existingConnection) {
 				if (existingConnection.joinConfig.channelId === voiceChannel.id) {
@@ -395,7 +391,6 @@ export class MusicService {
 			}
 
 			const normalizedVolume = level / 100;
-			this.currentVolume = normalizedVolume;
 			if (guildId) {
 				TTSService.getInstance().setMusicVolumeForGuild(
 					normalizedVolume,
@@ -536,9 +531,9 @@ export class MusicService {
 		try {
 			logDebug(`ストリーミング再生開始: ${url}`);
 
-			const stream = await streamYoutubeAudio(url);
-			if (!stream) {
-				logError(`ストリーム取得失敗: ${url}`);
+			const mediaUrl = await resolveYoutubeAudioUrl(url);
+			if (!mediaUrl) {
+				logError(`再生URL取得失敗: ${url}`);
 				await updateYtdlp();
 				await this.updateStatusMessage(
 					"❌ YouTube動画の読み込みに失敗しました。\n\nyt-dlpをアップデートしました。少し時間を置いて再度お試しください。",
@@ -559,7 +554,6 @@ export class MusicService {
 			const ttsService = TTSService.getInstance();
 			const musicVolume = ttsService.getMusicVolumeForGuild(guildId);
 			const ttsVolume = ttsService.getVolumeForGuild(guildId);
-			this.currentVolume = musicVolume;
 			this.currentMixer = new RealtimeAudioMixer({
 				musicVolume,
 				ttsVolume,
@@ -579,7 +573,7 @@ export class MusicService {
 				"再生中",
 			);
 
-			await this.currentMixer.playMusicStream(stream);
+			await this.currentMixer.playMusicUrl(mediaUrl);
 			await this.currentMixer.waitForTtsDrain();
 			return true;
 		} catch (error) {

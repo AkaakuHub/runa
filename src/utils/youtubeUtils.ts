@@ -1,26 +1,23 @@
 import { spawn } from "node:child_process";
-import type { Readable } from "node:stream";
-import { PassThrough } from "node:stream";
 import { logError, logInfo } from "../../src/utils/logger";
 
-// 一時的な音声ファイルを保存するディレクトリ
-/**
- * YouTubeの動画から音声をストリーミング
- */
-export async function streamYoutubeAudio(
-	url: string,
-): Promise<Readable | null> {
-	try {
-		logInfo(`YouTubeオーディオのストリーミング開始: ${url}`);
+const YOUTUBE_AUDIO_FORMAT_SELECTOR =
+	"bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio/best*[acodec!=none]/best";
 
-		// 音声専用フォーマットが存在しない動画向けに、音声付き通常動画までフォールバックする
+/**
+ * YouTube動画の再生用メディアURLを解決
+ */
+export async function resolveYoutubeAudioUrl(
+	url: string,
+): Promise<string | null> {
+	try {
+		logInfo(`YouTubeオーディオURLの解決開始: ${url}`);
+
 		const args = [
+			"--get-url",
 			"-f",
-			"bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio/best*[acodec!=none]/best",
-			"-o",
-			"-",
+			YOUTUBE_AUDIO_FORMAT_SELECTOR,
 			"--no-playlist",
-			"--no-mtime",
 			"--no-progress",
 			url,
 		];
@@ -29,17 +26,11 @@ export async function streamYoutubeAudio(
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 
-		if (!childProcess.stdout) {
-			logError("ストリーミング: stdoutがありません");
-			return null;
-		}
-
-		let startupResolved = false;
+		let stdout = "";
 		let stderrBuffer = "";
-		const output = new PassThrough();
 
-		childProcess.stdout.on("error", (error) => {
-			logInfo(`yt-dlp stdout closed: ${error}`);
+		childProcess.stdout?.on("data", (data) => {
+			stdout += data.toString();
 		});
 
 		childProcess.stderr?.on("data", (data) => {
@@ -50,72 +41,45 @@ export async function streamYoutubeAudio(
 			}
 		});
 
-		return await new Promise<Readable | null>((resolve) => {
-			const cleanupStartupListeners = () => {
-				childProcess.stdout?.off("data", onFirstChunk);
-				childProcess.off("error", onProcessError);
-				childProcess.off("close", onProcessClose);
-			};
-
-			const failStartup = (reason: string) => {
-				if (startupResolved) {
-					return;
-				}
-				startupResolved = true;
-				cleanupStartupListeners();
-				output.destroy();
-				if (childProcess.exitCode === null && !childProcess.killed) {
-					childProcess.kill("SIGKILL");
-				}
-				logError(reason);
+		return await new Promise<string | null>((resolve) => {
+			childProcess.once("error", (error) => {
+				logError(`yt-dlp process error: ${error}`);
 				resolve(null);
-			};
+			});
 
-			const onFirstChunk = (chunk: Buffer) => {
-				if (startupResolved) {
-					return;
-				}
-				startupResolved = true;
-				cleanupStartupListeners();
-				output.write(chunk);
-				childProcess.stdout?.pipe(output);
-				logInfo(`ストリーミング開始成功: ${url}`);
-				resolve(output);
-			};
-
-			const onProcessError = (error: Error) => {
-				failStartup(`yt-dlp process error: ${error}`);
-			};
-
-			const onProcessClose = (
-				code: number | null,
-				signal: NodeJS.Signals | null,
-			) => {
-				if (startupResolved) {
-					if (!output.destroyed) {
-						output.end();
-					}
-					if (code !== 0 && signal !== "SIGTERM" && signal !== "SIGKILL") {
-						const detail = stderrBuffer.trim();
-						logError(
-							`yt-dlp exited during stream code=${code} signal=${signal}${detail ? ` stderr=${detail}` : ""}`,
-						);
-					}
+			childProcess.once("close", (code, signal) => {
+				if (
+					code !== 0 ||
+					(signal && signal !== "SIGTERM" && signal !== "SIGKILL")
+				) {
+					const detail = stderrBuffer.trim();
+					logError(
+						`yt-dlp exited before media url resolve code=${code} signal=${signal}${detail ? ` stderr=${detail}` : ""}`,
+					);
+					resolve(null);
 					return;
 				}
 
-				const detail = stderrBuffer.trim();
-				failStartup(
-					`yt-dlp exited before stream startup code=${code} signal=${signal}${detail ? ` stderr=${detail}` : ""}`,
-				);
-			};
+				const mediaUrl = stdout
+					.split(/\r?\n/)
+					.map((line) => line.trim())
+					.find((line) => line.length > 0);
 
-			childProcess.stdout?.once("data", onFirstChunk);
-			childProcess.once("error", onProcessError);
-			childProcess.once("close", onProcessClose);
+				if (!mediaUrl) {
+					const detail = stderrBuffer.trim();
+					logError(
+						`yt-dlp returned empty media url${detail ? ` stderr=${detail}` : ""}`,
+					);
+					resolve(null);
+					return;
+				}
+
+				logInfo(`YouTubeオーディオURLの解決成功: ${url}`);
+				resolve(mediaUrl);
+			});
 		});
 	} catch (error) {
-		logError(`YouTubeストリーミングエラー: ${error}`);
+		logError(`YouTubeオーディオURL解決エラー: ${error}`);
 		return null;
 	}
 }
