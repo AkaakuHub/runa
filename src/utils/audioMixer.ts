@@ -5,9 +5,9 @@ import type {
 import { spawn } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import {
-	type AudioResource,
-	createAudioResource,
 	StreamType,
+	createAudioResource,
+	type AudioResource,
 } from "@discordjs/voice";
 import { logDebug, logError } from "./logger";
 
@@ -15,7 +15,6 @@ const PCM_SAMPLE_RATE = 48_000;
 const PCM_CHANNELS = 2;
 const PCM_BYTES_PER_SAMPLE = 2;
 const SILENCE_FRAME_MS = 20;
-const FFMPEG_THREAD_QUEUE_SIZE = "4096";
 const SILENCE_FRAME_BYTES =
 	(PCM_SAMPLE_RATE / (1000 / SILENCE_FRAME_MS)) *
 	PCM_CHANNELS *
@@ -135,8 +134,6 @@ function spawnPcmDecoder(
 			"-hide_banner",
 			"-loglevel",
 			"error",
-			"-thread_queue_size",
-			FFMPEG_THREAD_QUEUE_SIZE,
 			...inputArgs,
 			"-f",
 			"s16le",
@@ -233,8 +230,6 @@ export class RealtimeAudioMixer {
 				String(PCM_SAMPLE_RATE),
 				"-ac",
 				String(PCM_CHANNELS),
-				"-thread_queue_size",
-				FFMPEG_THREAD_QUEUE_SIZE,
 				"-i",
 				"pipe:3",
 				"-f",
@@ -243,8 +238,6 @@ export class RealtimeAudioMixer {
 				String(PCM_SAMPLE_RATE),
 				"-ac",
 				String(PCM_CHANNELS),
-				"-thread_queue_size",
-				FFMPEG_THREAD_QUEUE_SIZE,
 				"-i",
 				"pipe:4",
 				"-filter_complex",

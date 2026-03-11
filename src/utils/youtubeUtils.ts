@@ -3,8 +3,6 @@ import type { Readable } from "node:stream";
 import { PassThrough } from "node:stream";
 import { logError, logInfo } from "../../src/utils/logger";
 
-const YOUTUBE_STREAM_BUFFER_BYTES = 1024 * 1024;
-
 // 一時的な音声ファイルを保存するディレクトリ
 /**
  * YouTubeの動画から音声をストリーミング
@@ -38,9 +36,7 @@ export async function streamYoutubeAudio(
 
 		let startupResolved = false;
 		let stderrBuffer = "";
-		const output = new PassThrough({
-			highWaterMark: YOUTUBE_STREAM_BUFFER_BYTES,
-		});
+		const output = new PassThrough();
 
 		childProcess.stdout.on("error", (error) => {
 			logInfo(`yt-dlp stdout closed: ${error}`);
