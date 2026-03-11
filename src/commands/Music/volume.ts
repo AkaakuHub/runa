@@ -5,16 +5,16 @@ import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 
 export const VolumeCommand: CommandDefinition = {
-	name: "volume",
-	description: "再生中の音楽の音量を調整します (0-100)",
+	name: "music_volume",
+	description: "音楽の音量を設定します (0-200, デフォルト10)",
 	options: [
 		{
 			name: "level",
-			description: "音量レベル (0-100)",
+			description: "音量レベル (0-200, デフォルト10)",
 			type: "INTEGER",
 			required: true,
 			min_value: 0,
-			max_value: 100,
+			max_value: 200,
 		},
 	],
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
@@ -30,21 +30,14 @@ export const VolumeCommand: CommandDefinition = {
 
 		try {
 			const musicService = MusicService.getInstance();
-
-			if (!musicService.isCurrentlyPlaying()) {
-				await interaction.reply({
-					content: "現在何も再生していません",
-					flags: MessageFlags.Ephemeral,
-				});
-				return;
-			}
-
-			const success = musicService.setVolume(level);
+			const success = musicService.setVolume(level, interaction.guild.id);
 
 			if (success) {
-				await interaction.reply(`音量を ${level}% に設定しました`);
+				await interaction.reply(
+					`音楽の音量を ${level}% に設定しました。再生中の曲には次の曲から反映されます。`,
+				);
 				logInfo(
-					`音量変更: ${level}% by ${interaction.user.tag} in ${interaction.guild.name}`,
+					`音楽音量変更: ${level}% by ${interaction.user.tag} in ${interaction.guild.name}`,
 				);
 			} else {
 				await interaction.reply({

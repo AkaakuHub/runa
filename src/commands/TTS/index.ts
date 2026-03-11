@@ -50,6 +50,12 @@ export const TTSCommand: CommandDefinition = {
 					const config = ttsService.getConfig();
 					const userSpeaker = ttsService.getSpeakerForUser(interaction.user.id);
 					const guildSpeed = ttsService.getSpeedForGuild(interaction.guild.id);
+					const guildTtsVolume = ttsService.getVolumeForGuild(
+						interaction.guild.id,
+					);
+					const guildMusicVolume = ttsService.getMusicVolumeForGuild(
+						interaction.guild.id,
+					);
 					const statusText = `
 **TTS機能設定**
 - 状態: ${config.enabled ? "✅ 有効" : "❌ 無効"}
@@ -57,7 +63,10 @@ export const TTSCommand: CommandDefinition = {
 - デフォルト音声キャラクター: ${config.speaker}
 - このサーバーの読み上げ速度: ${guildSpeed}
 - デフォルト読み上げ速度: ${config.speed}
-- 音量: ${Math.round(config.volume * 100)}%
+- このサーバーのTTS音量: ${Math.round(guildTtsVolume * 100)}%
+- このサーバーの音楽音量: ${Math.round(guildMusicVolume * 100)}%
+- フェード: ${Math.abs(guildTtsVolume - guildMusicVolume) < 0.0001 ? "無効" : "有効"}
+- デフォルト音量: ${Math.round(config.volume * 100)}%
 - 音高: ${config.pitch}
 - VOICEVOX URL: ${config.voicevoxUrl}
 					`.trim();

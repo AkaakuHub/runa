@@ -6,15 +6,15 @@ import { TTSService } from "../../services/TTSService";
 
 export const TTSVolumeCommand: CommandDefinition = {
 	name: "tts_volume",
-	description: "TTSの音量を設定します",
+	description: "TTSの音量を設定します (0-200, デフォルト80)",
 	options: [
 		{
 			name: "volume",
-			description: "音量 (0.0-1.0)",
-			type: "NUMBER",
+			description: "音量 (0-200, デフォルト80)",
+			type: "INTEGER",
 			required: true,
-			min_value: 0.0,
-			max_value: 1.0,
+			min_value: 0,
+			max_value: 200,
 		},
 	],
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
@@ -26,7 +26,7 @@ export const TTSVolumeCommand: CommandDefinition = {
 			return;
 		}
 
-		const volume = interaction.options.getNumber("volume");
+		const volume = interaction.options.getInteger("volume");
 		const ttsService = TTSService.getInstance();
 
 		try {
@@ -38,13 +38,15 @@ export const TTSVolumeCommand: CommandDefinition = {
 				return;
 			}
 
-			ttsService.setVolume(volume);
+			ttsService.setVolume(volume / 100, interaction.guild.id);
 
 			await interaction.reply(
-				`TTSの音量を${Math.round(volume * 100)}%に設定しました 🔊`,
+				`TTSの音量を${volume}%に設定しました。再生中の曲には次の読み上げ以降に反映されます 🔊`,
 			);
 
-			logInfo(`TTS音量を${volume}に設定しました`);
+			logInfo(
+				`TTS音量を${volume}%に設定しました (guild=${interaction.guild.id})`,
+			);
 		} catch (error) {
 			logError(`TTS音量設定エラー: ${error}`);
 			await interaction.reply({
