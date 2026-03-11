@@ -549,12 +549,18 @@ export class TTSService {
 			// MusicServiceを取得して現在の再生状態を確認
 			const { MusicService } = await import("../services/MusicService");
 			const musicService = MusicService.getInstance();
-			const wasMusicPlaying = musicService.isCurrentlyPlaying();
+			const isOverlayAvailable =
+				musicService.isCurrentlyPlaying() && musicService.hasActiveMixer();
 
-			// 音楽が再生中の場合は一時停止
-			if (wasMusicPlaying) {
-				logDebug("TTS: 音楽を一時停止します");
-				musicService.pauseMusic();
+			// 音楽再生中はミキサーへ差し込み、BGMを継続したまま読み上げる
+			if (isOverlayAvailable) {
+				logDebug("TTS: ミキサーへ音声を重ねます");
+				this.isPlaying = true;
+				this.currentAudioFile = audioFile;
+				const result = await musicService.enqueueTtsOverlay(audioFile);
+				this.isPlaying = false;
+				this.currentAudioFile = null;
+				return result;
 			}
 
 			const resource = createAudioResource(audioFile, {
@@ -563,12 +569,6 @@ export class TTSService {
 
 			if (resource.volume) {
 				resource.volume.setVolume(this.config.volume);
-			}
-
-			// 音楽が再生中の場合は一時停止
-			if (wasMusicPlaying) {
-				logDebug("TTS: 音楽を一時停止します");
-				musicService.pauseMusic();
 			}
 
 			// MusicServiceのAudioPlayerを一時的に使用
@@ -582,13 +582,6 @@ export class TTSService {
 
 			// 再生完了を待機
 			const result = await this.waitForPlaybackComplete(musicPlayer);
-
-			// TTS再生終了後に音楽を再開
-			if (wasMusicPlaying) {
-				logDebug("TTS: 音楽を再開します");
-				await new Promise((resolve) => setTimeout(resolve, 300)); // 少し待ってから再開
-				musicService.resumeMusic();
-			}
 
 			return result;
 		} catch (error) {
@@ -668,6 +661,9 @@ export class TTSService {
 
 			const { MusicService } = await import("../services/MusicService");
 			const musicService = MusicService.getInstance();
+			if (musicService.skipTtsOverlay()) {
+				return true;
+			}
 			musicService.getPlayer().stop();
 			return true;
 		} catch (error) {
