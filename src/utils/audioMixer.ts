@@ -21,6 +21,11 @@ const SILENCE_FRAME_BYTES =
 	PCM_BYTES_PER_SAMPLE;
 const SILENCE_FRAME = Buffer.alloc(SILENCE_FRAME_BYTES);
 
+interface RealtimeAudioMixerOptions {
+	musicVolume: number;
+	ttsVolume: number;
+}
+
 class PCMInputFeeder {
 	private readonly target: Writable;
 	private readonly label: string;
@@ -156,6 +161,13 @@ function spawnPcmDecoder(
 		stdinSource.pipe(decoder.stdin);
 	}
 
+	decoder.stdout.on("error", (error) => {
+		logDebug(`decoder stdout closed: ${error}`);
+	});
+	decoder.stderr.on("error", (error) => {
+		logDebug(`decoder stderr closed: ${error}`);
+	});
+
 	return decoder;
 }
 
@@ -204,7 +216,8 @@ export class RealtimeAudioMixer {
 	private ttsQueueVersion = 0;
 	private stopped = false;
 
-	public constructor() {
+	public constructor(options: RealtimeAudioMixerOptions) {
+		const filterGraph = buildFilterGraph(options);
 		const mixerProcess = spawn(
 			getFFmpegBinary(),
 			[
@@ -228,7 +241,7 @@ export class RealtimeAudioMixer {
 				"-i",
 				"pipe:4",
 				"-filter_complex",
-				"[1:a]volume=2.4,asplit=2[tts_sidechain][tts_mix];[0:a][tts_sidechain]sidechaincompress=threshold=0.02:ratio=10:attack=12:release=220[ducked];[ducked]volume=0.55[music_bed];[music_bed][tts_mix]amix=inputs=2:weights='1 1.6':normalize=0:dropout_transition=0,alimiter=limit=0.98[out]",
+				filterGraph,
 				"-map",
 				"[out]",
 				"-f",
@@ -259,6 +272,18 @@ export class RealtimeAudioMixer {
 			if (text) {
 				logError(`ffmpeg mixer stderr: ${text}`);
 			}
+		});
+		mixerProcess.stdout?.on("error", (error) => {
+			logDebug(`ffmpeg mixer stdout closed: ${error}`);
+		});
+		mixerProcess.stderr?.on("error", (error) => {
+			logDebug(`ffmpeg mixer stderr closed: ${error}`);
+		});
+		(mixerProcess.stdio[3] as Writable | undefined)?.on("error", (error) => {
+			logDebug(`ffmpeg mixer music pipe closed: ${error}`);
+		});
+		(mixerProcess.stdio[4] as Writable | undefined)?.on("error", (error) => {
+			logDebug(`ffmpeg mixer tts pipe closed: ${error}`);
 		});
 
 		mixerProcess.on("close", (code, signal) => {
@@ -374,4 +399,19 @@ export class RealtimeAudioMixer {
 			return false;
 		}
 	}
+}
+
+function buildFilterGraph(options: RealtimeAudioMixerOptions): string {
+	const musicVolume = clampVolume(options.musicVolume);
+	const ttsVolume = clampVolume(options.ttsVolume);
+
+	if (Math.abs(musicVolume - ttsVolume) < 0.0001) {
+		return `[0:a]volume=${musicVolume}[music];[1:a]volume=${ttsVolume}[tts];[music][tts]amix=inputs=2:normalize=0:dropout_transition=0,alimiter=limit=0.98[out]`;
+	}
+
+	return `[1:a]volume=${ttsVolume},asplit=2[tts_sidechain][tts_mix];[0:a]volume=${musicVolume}[music_in];[music_in][tts_sidechain]sidechaincompress=threshold=0.02:ratio=10:attack=12:release=220[ducked];[ducked][tts_mix]amix=inputs=2:normalize=0:dropout_transition=0,alimiter=limit=0.98[out]`;
+}
+
+function clampVolume(volume: number): number {
+	return Math.max(0, Math.min(2, volume));
 }

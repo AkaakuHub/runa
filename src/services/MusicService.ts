@@ -14,6 +14,7 @@ import {
 } from "discord.js";
 import { logDebug, logError, logInfo, logWarn } from "../../src/utils/logger";
 import { RealtimeAudioMixer } from "../utils/audioMixer";
+import { TTSService } from "./TTSService";
 import {
 	sanitizeYoutubeUrl,
 	streamYoutubeAudio,
@@ -145,6 +146,9 @@ export class MusicService {
 		textChannel: TextChannel,
 	): Promise<boolean> {
 		try {
+			this.currentVolume = TTSService.getInstance().getMusicVolumeForGuild(
+				voiceChannel.guild.id,
+			);
 			const existingConnection = getVoiceConnection(voiceChannel.guild.id);
 			if (existingConnection) {
 				if (existingConnection.joinConfig.channelId === voiceChannel.id) {
@@ -383,17 +387,23 @@ export class MusicService {
 		}
 	}
 
-	public setVolume(level: number): boolean {
+	public setVolume(level: number, guildId?: string): boolean {
 		try {
-			if (level < 0 || level > 100) {
+			if (level < 0 || level > 200) {
 				logError(`無効な音量レベル: ${level}`);
 				return false;
 			}
 
 			const normalizedVolume = level / 100;
 			this.currentVolume = normalizedVolume;
+			if (guildId) {
+				TTSService.getInstance().setMusicVolumeForGuild(
+					normalizedVolume,
+					guildId,
+				);
+			}
 
-			if (this.currentResource?.volume) {
+			if (this.currentResource?.volume && !this.currentMixer) {
 				this.currentResource.volume.setVolume(normalizedVolume);
 			}
 
@@ -546,11 +556,18 @@ export class MusicService {
 			}
 
 			this.stopMixer();
-			this.currentMixer = new RealtimeAudioMixer();
+			const ttsService = TTSService.getInstance();
+			const musicVolume = ttsService.getMusicVolumeForGuild(guildId);
+			const ttsVolume = ttsService.getVolumeForGuild(guildId);
+			this.currentVolume = musicVolume;
+			this.currentMixer = new RealtimeAudioMixer({
+				musicVolume,
+				ttsVolume,
+			});
 			const resource = this.currentMixer.createResource();
 			this.currentResource = resource;
 			if (resource.volume) {
-				resource.volume.setVolume(this.currentVolume);
+				resource.volume.setVolume(1);
 			}
 
 			connection.subscribe(this.player);

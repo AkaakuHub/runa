@@ -32,6 +32,15 @@ export async function streamYoutubeAudio(
 
 		let hasError = false;
 
+		childProcess.stdout.on("error", (error) => {
+			logInfo(`yt-dlp stdout closed: ${error}`);
+		});
+		childProcess.stdout.once("close", () => {
+			if (childProcess.exitCode === null && !childProcess.killed) {
+				childProcess.kill("SIGKILL");
+			}
+		});
+
 		// エラーハンドリングを追加
 		childProcess.stderr?.on("data", (data) => {
 			// 重要なエラーのみログ出力

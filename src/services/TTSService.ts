@@ -36,6 +36,8 @@ interface TTSPersistedSettings {
 	speaker: number;
 	userSpeakers: Record<string, number>;
 	guildSpeeds: Record<string, number>;
+	guildTtsVolumes: Record<string, number>;
+	guildMusicVolumes: Record<string, number>;
 }
 
 export class TTSService {
@@ -48,6 +50,8 @@ export class TTSService {
 	private ttsQueue: TTSQueue;
 	private userSpeakers: Map<string, number> = new Map();
 	private guildSpeeds: Map<string, number> = new Map();
+	private guildTtsVolumes: Map<string, number> = new Map();
+	private guildMusicVolumes: Map<string, number> = new Map();
 	private settingsPath = join(process.cwd(), "data", "tts-settings.json");
 	private readonly singSpeaker = "6000";
 
@@ -105,6 +109,36 @@ export class TTSService {
 				}
 			}
 		}
+		if (
+			persisted.guildTtsVolumes &&
+			typeof persisted.guildTtsVolumes === "object"
+		) {
+			for (const [guildId, volume] of Object.entries(
+				persisted.guildTtsVolumes,
+			)) {
+				if (typeof volume === "number") {
+					this.guildTtsVolumes.set(
+						guildId,
+						Math.max(0.0, Math.min(2.0, volume)),
+					);
+				}
+			}
+		}
+		if (
+			persisted.guildMusicVolumes &&
+			typeof persisted.guildMusicVolumes === "object"
+		) {
+			for (const [guildId, volume] of Object.entries(
+				persisted.guildMusicVolumes,
+			)) {
+				if (typeof volume === "number") {
+					this.guildMusicVolumes.set(
+						guildId,
+						Math.max(0.0, Math.min(2.0, volume)),
+					);
+				}
+			}
+		}
 	}
 
 	private savePersistedSettings(): void {
@@ -113,6 +147,8 @@ export class TTSService {
 			speaker: this.config.speaker,
 			userSpeakers: Object.fromEntries(this.userSpeakers),
 			guildSpeeds: Object.fromEntries(this.guildSpeeds),
+			guildTtsVolumes: Object.fromEntries(this.guildTtsVolumes),
+			guildMusicVolumes: Object.fromEntries(this.guildMusicVolumes),
 		};
 		writeJsonFileSync(this.settingsPath, persisted);
 	}
@@ -237,9 +273,32 @@ export class TTSService {
 	/**
 	 * 音量を設定
 	 */
-	public setVolume(volume: number): void {
-		this.config.volume = Math.max(0.0, Math.min(1.0, volume));
+	public setVolume(volume: number, guildId?: string): void {
+		const normalizedVolume = Math.max(0.0, Math.min(2.0, volume));
+		if (guildId) {
+			this.guildTtsVolumes.set(guildId, normalizedVolume);
+			this.savePersistedSettings();
+			logInfo(`TTS音量を${normalizedVolume}に設定しました (guild=${guildId})`);
+			return;
+		}
+
+		this.config.volume = normalizedVolume;
 		logInfo(`TTS音量を${this.config.volume}に設定しました`);
+	}
+
+	public getVolumeForGuild(guildId: string): number {
+		return this.guildTtsVolumes.get(guildId) ?? this.config.volume;
+	}
+
+	public setMusicVolumeForGuild(volume: number, guildId: string): void {
+		const normalizedVolume = Math.max(0.0, Math.min(2.0, volume));
+		this.guildMusicVolumes.set(guildId, normalizedVolume);
+		this.savePersistedSettings();
+		logInfo(`音楽音量を${normalizedVolume}に設定しました (guild=${guildId})`);
+	}
+
+	public getMusicVolumeForGuild(guildId: string): number {
+		return this.guildMusicVolumes.get(guildId) ?? 0.1;
 	}
 
 	/**
