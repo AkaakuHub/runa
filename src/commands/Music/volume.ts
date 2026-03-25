@@ -33,9 +33,7 @@ export const VolumeCommand: CommandDefinition = {
 			const success = musicService.setVolume(level, interaction.guild.id);
 
 			if (success) {
-				await interaction.reply(
-					`音楽の音量を ${level}% に設定しました。再生中の曲には次の曲から反映されます。`,
-				);
+				await interaction.reply(`音楽の音量を ${level}% に設定しました。`);
 				logInfo(
 					`音楽音量変更: ${level}% by ${interaction.user.tag} in ${interaction.guild.name}`,
 				);

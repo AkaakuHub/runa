@@ -1,8 +1,8 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import { MessageFlags } from "discord.js";
+import { TTSService } from "../../services/TTSService";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
-import { TTSService } from "../../services/TTSService";
 
 export const TTSVolumeCommand: CommandDefinition = {
 	name: "tts_volume",
@@ -40,9 +40,7 @@ export const TTSVolumeCommand: CommandDefinition = {
 
 			ttsService.setVolume(volume / 100, interaction.guild.id);
 
-			await interaction.reply(
-				`TTSの音量を${volume}%に設定しました。再生中の曲には次の読み上げ以降に反映されます 🔊`,
-			);
+			await interaction.reply(`TTSの音量を${volume}%に設定しました 🔊`);
 
 			logInfo(
 				`TTS音量を${volume}%に設定しました (guild=${interaction.guild.id})`,

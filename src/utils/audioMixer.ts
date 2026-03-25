@@ -5,9 +5,9 @@ import type {
 import { spawn } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import {
-	StreamType,
-	createAudioResource,
 	type AudioResource,
+	createAudioResource,
+	StreamType,
 } from "@discordjs/voice";
 import { logDebug, logError } from "./logger";
 
@@ -32,10 +32,12 @@ class PCMInputFeeder {
 	private silenceTimer?: NodeJS.Timeout;
 	private activeSource?: Readable;
 	private destroyed = false;
+	private gain = 1;
 
-	public constructor(target: Writable, label: string) {
+	public constructor(target: Writable, label: string, initialGain: number) {
 		this.target = target;
 		this.label = label;
+		this.gain = clampVolume(initialGain);
 		this.startSilenceLoop();
 	}
 
@@ -70,7 +72,8 @@ class PCMInputFeeder {
 					return;
 				}
 
-				if (!this.target.write(chunk)) {
+				const outputChunk = this.applyGain(chunk);
+				if (!this.target.write(outputChunk)) {
 					source.pause();
 					this.target.once("drain", onDrain);
 				}
@@ -91,6 +94,10 @@ class PCMInputFeeder {
 			source.once("close", onEnd);
 			source.once("error", onError);
 		});
+	}
+
+	public setGain(gain: number): void {
+		this.gain = clampVolume(gain);
 	}
 
 	public destroy(): void {
@@ -117,6 +124,23 @@ class PCMInputFeeder {
 			}
 		}, SILENCE_FRAME_MS);
 		this.silenceTimer.unref();
+	}
+
+	private applyGain(chunk: Buffer): Buffer {
+		if (this.gain === 1) {
+			return chunk;
+		}
+
+		const output = Buffer.allocUnsafe(chunk.length);
+		for (let offset = 0; offset < chunk.length; offset += 2) {
+			const sample = chunk.readInt16LE(offset);
+			const scaled = Math.max(
+				-32768,
+				Math.min(32767, Math.round(sample * this.gain)),
+			);
+			output.writeInt16LE(scaled, offset);
+		}
+		return output;
 	}
 }
 
@@ -217,7 +241,7 @@ export class RealtimeAudioMixer {
 	private stopped = false;
 
 	public constructor(options: RealtimeAudioMixerOptions) {
-		const filterGraph = buildFilterGraph(options);
+		const filterGraph = buildFilterGraph();
 		const mixerProcess = spawn(
 			getFFmpegBinary(),
 			[
@@ -261,10 +285,12 @@ export class RealtimeAudioMixer {
 		this.musicFeeder = new PCMInputFeeder(
 			mixerProcess.stdio[3] as Writable,
 			"music-mixer",
+			options.musicVolume,
 		);
 		this.ttsFeeder = new PCMInputFeeder(
 			mixerProcess.stdio[4] as Writable,
 			"tts-mixer",
+			options.ttsVolume,
 		);
 
 		mixerProcess.stderr?.on("data", (data) => {
@@ -331,6 +357,14 @@ export class RealtimeAudioMixer {
 			.catch(() => false)
 			.then(() => this.playTtsFile(audioFile));
 		return this.ttsChain;
+	}
+
+	public setMusicVolume(volume: number): void {
+		this.musicFeeder?.setGain(volume);
+	}
+
+	public setTtsVolume(volume: number): void {
+		this.ttsFeeder?.setGain(volume);
 	}
 
 	public async waitForTtsDrain(): Promise<boolean> {
@@ -401,15 +435,8 @@ export class RealtimeAudioMixer {
 	}
 }
 
-function buildFilterGraph(options: RealtimeAudioMixerOptions): string {
-	const musicVolume = clampVolume(options.musicVolume);
-	const ttsVolume = clampVolume(options.ttsVolume);
-
-	if (Math.abs(musicVolume - ttsVolume) < 0.0001) {
-		return `[0:a]volume=${musicVolume}[music];[1:a]volume=${ttsVolume}[tts];[music][tts]amix=inputs=2:normalize=0:dropout_transition=0,alimiter=limit=0.98[out]`;
-	}
-
-	return `[1:a]volume=${ttsVolume},asplit=2[tts_sidechain][tts_mix];[0:a]volume=${musicVolume}[music_in];[music_in][tts_sidechain]sidechaincompress=threshold=0.02:ratio=10:attack=12:release=220[ducked];[ducked][tts_mix]amix=inputs=2:normalize=0:dropout_transition=0,alimiter=limit=0.98[out]`;
+function buildFilterGraph(): string {
+	return "[1:a]asplit=2[tts_sidechain][tts_mix];[0:a]anull[music_in];[music_in][tts_sidechain]sidechaincompress=threshold=0.02:ratio=10:attack=12:release=220[ducked];[ducked][tts_mix]amix=inputs=2:normalize=0:dropout_transition=0,alimiter=limit=0.98[out]";
 }
 
 function clampVolume(volume: number): number {

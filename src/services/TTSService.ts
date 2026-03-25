@@ -46,6 +46,10 @@ export class TTSService {
 	private voiceCharacters: VoiceCharacter[] = [];
 	private isPlaying = false;
 	private currentAudioFile: string | null = null;
+	private currentPlaybackResource: {
+		volume?: { setVolume: (volume: number) => void };
+	} | null = null;
+	private currentPlaybackGuildId: string | null = null;
 	private skipCurrentPlayback = false;
 	private ttsQueue: TTSQueue;
 	private userSpeakers: Map<string, number> = new Map();
@@ -278,6 +282,18 @@ export class TTSService {
 		if (guildId) {
 			this.guildTtsVolumes.set(guildId, normalizedVolume);
 			this.savePersistedSettings();
+			if (
+				this.currentPlaybackGuildId === guildId &&
+				this.currentPlaybackResource?.volume
+			) {
+				this.currentPlaybackResource.volume.setVolume(normalizedVolume);
+			}
+			void import("../services/MusicService").then(({ MusicService }) => {
+				MusicService.getInstance().setCurrentTtsVolume(
+					normalizedVolume,
+					guildId,
+				);
+			});
 			logInfo(`TTS音量を${normalizedVolume}に設定しました (guild=${guildId})`);
 			return;
 		}
@@ -627,7 +643,7 @@ export class TTSService {
 			});
 
 			if (resource.volume) {
-				resource.volume.setVolume(this.config.volume);
+				resource.volume.setVolume(this.getVolumeForGuild(guildId));
 			}
 
 			// MusicServiceのAudioPlayerを一時的に使用
@@ -636,6 +652,8 @@ export class TTSService {
 			musicPlayer.play(resource);
 			this.isPlaying = true;
 			this.currentAudioFile = audioFile;
+			this.currentPlaybackResource = resource;
+			this.currentPlaybackGuildId = guildId;
 
 			logDebug("TTS音声の再生を開始しました");
 
@@ -656,6 +674,8 @@ export class TTSService {
 		return new Promise((resolve) => {
 			const finishHandler = () => {
 				this.isPlaying = false;
+				this.currentPlaybackResource = null;
+				this.currentPlaybackGuildId = null;
 				player.off(AudioPlayerStatus.Idle, finishHandler);
 				player.off("error", errorHandler);
 				resolve(true);
@@ -663,6 +683,8 @@ export class TTSService {
 
 			const errorHandler = () => {
 				this.isPlaying = false;
+				this.currentPlaybackResource = null;
+				this.currentPlaybackGuildId = null;
 				player.off(AudioPlayerStatus.Idle, finishHandler);
 				player.off("error", errorHandler);
 				resolve(true);
@@ -689,6 +711,8 @@ export class TTSService {
 					this.cleanupAudioFile(this.currentAudioFile);
 					this.currentAudioFile = null;
 				}
+				this.currentPlaybackResource = null;
+				this.currentPlaybackGuildId = null;
 
 				logDebug("TTS用ボイスチャンネルから切断しました");
 				return true;

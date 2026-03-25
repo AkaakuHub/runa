@@ -14,13 +14,13 @@ import {
 } from "discord.js";
 import { logDebug, logError, logInfo, logWarn } from "../../src/utils/logger";
 import { RealtimeAudioMixer } from "../utils/audioMixer";
-import { TTSService } from "./TTSService";
 import {
 	sanitizeYoutubeUrl,
 	streamYoutubeAudio,
 	updateYtdlp,
 } from "../utils/youtubeUtils";
 import { QueueManager } from "./QueueManager";
+import { TTSService } from "./TTSService";
 
 export class MusicService {
 	private static instance: MusicService;
@@ -31,7 +31,6 @@ export class MusicService {
 	private currentResource: {
 		volume?: { setVolume: (volume: number) => void };
 	} | null = null;
-	private currentVolume = 0.1;
 	private currentPlayingUrl?: string;
 	private statusMessage?: Message;
 	private retryCount = 0;
@@ -146,9 +145,6 @@ export class MusicService {
 		textChannel: TextChannel,
 	): Promise<boolean> {
 		try {
-			this.currentVolume = TTSService.getInstance().getMusicVolumeForGuild(
-				voiceChannel.guild.id,
-			);
 			const existingConnection = getVoiceConnection(voiceChannel.guild.id);
 			if (existingConnection) {
 				if (existingConnection.joinConfig.channelId === voiceChannel.id) {
@@ -395,7 +391,6 @@ export class MusicService {
 			}
 
 			const normalizedVolume = level / 100;
-			this.currentVolume = normalizedVolume;
 			if (guildId) {
 				TTSService.getInstance().setMusicVolumeForGuild(
 					normalizedVolume,
@@ -403,11 +398,15 @@ export class MusicService {
 				);
 			}
 
+			if (this.currentMixer) {
+				this.currentMixer.setMusicVolume(normalizedVolume);
+			}
+
 			if (this.currentResource?.volume && !this.currentMixer) {
 				this.currentResource.volume.setVolume(normalizedVolume);
 			}
 
-			logDebug(`音量を${level}%に設定しました`);
+			logDebug(`音楽音量を${level}%に設定しました`);
 			return true;
 		} catch (error) {
 			logError(`音量設定エラー: ${error}`);
@@ -486,6 +485,15 @@ export class MusicService {
 		return this.currentMixer.skipCurrentTts();
 	}
 
+	public setCurrentTtsVolume(volume: number, guildId: string): boolean {
+		if (!this.currentMixer || this.currentTextChannel?.guild.id !== guildId) {
+			return false;
+		}
+
+		this.currentMixer.setTtsVolume(volume);
+		return true;
+	}
+
 	private async handleErrorWithRetry(): Promise<void> {
 		if (!this.currentTextChannel || !this.currentPlayingUrl) {
 			this.playNext();
@@ -559,7 +567,6 @@ export class MusicService {
 			const ttsService = TTSService.getInstance();
 			const musicVolume = ttsService.getMusicVolumeForGuild(guildId);
 			const ttsVolume = ttsService.getVolumeForGuild(guildId);
-			this.currentVolume = musicVolume;
 			this.currentMixer = new RealtimeAudioMixer({
 				musicVolume,
 				ttsVolume,
