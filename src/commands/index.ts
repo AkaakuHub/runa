@@ -10,7 +10,6 @@ import { HistorySearchCommand } from "./HistorySearch";
 import { ByeCommand } from "./Music/bye";
 import { JoinCommand } from "./Music/join";
 import { ListCommand } from "./Music/list";
-import { RegisterCommand } from "./Music/register";
 import { SkipCommand } from "./Music/skip";
 import { VolumeCommand } from "./Music/volume";
 import { PingCommand } from "./Ping";
@@ -36,7 +35,6 @@ const commandsList: CommandDefinition[] = [
 	SkipCommand,
 	VolumeCommand,
 	ListCommand,
-	RegisterCommand,
 	TTSCommand,
 	TTSVolumeCommand,
 	TTSSpeedCommand,

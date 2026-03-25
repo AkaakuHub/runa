@@ -36,4 +36,3 @@ export const logError = (message: string): void => log("error", message);
 export const logWarn = (message: string): void => log("warn", message);
 export const logInfo = (message: string): void => log("info", message);
 export const logDebug = (message: string): void => log("debug", message);
-const logTrace = (message: string): void => log("trace", message);

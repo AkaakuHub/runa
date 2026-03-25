@@ -1,6 +1,6 @@
 import { getVoiceConnection } from "@discordjs/voice";
 import type { GuildMember, Message, VoiceChannel } from "discord.js";
-import { ChannelRegistryService } from "../services/ChannelRegistryService";
+import { MusicService } from "../services/MusicService";
 import { TTSQueue } from "../services/TTSQueue";
 import { TTSService } from "../services/TTSService";
 import { logDebug, logError } from "../utils/logger";
@@ -23,14 +23,20 @@ export async function handleTTS(message: Message): Promise<void> {
 		return;
 	}
 
-	// チャンネル登録サービスを取得
-	const channelRegistry = ChannelRegistryService.getInstance();
-
-	// このチャンネルが登録されているか確認
-	if (!channelRegistry.isRegistered(message.guild.id, message.channelId)) {
+	const musicService = MusicService.getInstance();
+	const activeTextChannelId = musicService.getCurrentTextChannelId();
+	if (!activeTextChannelId) {
+		logDebug("TTS: join実行チャンネルが未設定のため無視します");
 		return;
 	}
-	logDebug(`TTS: 登録済みチャンネル ${message.channelId} を監視しています`);
+
+	if (activeTextChannelId !== message.channelId) {
+		logDebug(
+			`TTS: join実行チャンネル外のため無視します current=${activeTextChannelId} message=${message.channelId}`,
+		);
+		return;
+	}
+	logDebug(`TTS: join実行チャンネル ${message.channelId} を監視しています`);
 
 	// コマンドメッセージは無視（スラッシュコマンド）
 	if (message.content.startsWith("/")) return;

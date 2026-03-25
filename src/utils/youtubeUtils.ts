@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Readable } from "node:stream";
 import { PassThrough } from "node:stream";
 import { logError, logInfo } from "../../src/utils/logger";
@@ -12,6 +15,7 @@ export async function streamYoutubeAudio(
 ): Promise<Readable | null> {
 	try {
 		logInfo(`YouTubeオーディオのストリーミング開始: ${url}`);
+		const ytDlpBinary = resolveYtDlpBinary();
 
 		// 音声専用フォーマットが存在しない動画向けに、音声付き通常動画までフォールバックする
 		const args = [
@@ -25,7 +29,7 @@ export async function streamYoutubeAudio(
 			url,
 		];
 
-		const childProcess = spawn("yt-dlp", args, {
+		const childProcess = spawn(ytDlpBinary, args, {
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 
@@ -126,8 +130,9 @@ export async function streamYoutubeAudio(
 export async function updateYtdlp(): Promise<void> {
 	try {
 		logInfo("yt-dlpのアップデートを開始します");
+		const ytDlpBinary = resolveYtDlpBinary();
 
-		const childProcess = spawn("pip", ["install", "-U", "yt-dlp"], {
+		const childProcess = spawn(ytDlpBinary, ["-U"], {
 			stdio: "pipe",
 		});
 
@@ -168,9 +173,20 @@ export async function updateYtdlp(): Promise<void> {
 /**
  * YouTube URLを検証
  */
-export function isValidYoutubeUrl(url: string): boolean {
-	const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/;
-	return youtubeRegex.test(url);
+
+export function extractYoutubeUrl(content: string): string | null {
+	const normalized = content.trim().replace(/^<|>$/g, "");
+	const directMatch = normalized.match(
+		/^(https?:\/\/)?((www|music)\.)?(youtube\.com|youtu\.be)\/\S+$/i,
+	);
+	if (directMatch) {
+		return normalizeYoutubeUrl(directMatch[0]);
+	}
+
+	const embeddedMatch = content.match(
+		/(https?:\/\/(?:www\.|music\.)?(?:youtube\.com|youtu\.be)\/[^\s>]+)/i,
+	);
+	return embeddedMatch ? normalizeYoutubeUrl(embeddedMatch[0]) : null;
 }
 
 /**
@@ -237,4 +253,25 @@ export function sanitizeYoutubeUrl(url: string): string {
 		logError(`YouTube URLサニタイズエラー: ${url}, エラー: ${error}`);
 		return url;
 	}
+}
+
+function normalizeYoutubeUrl(url: string): string {
+	return url.replace(/^<|>$/g, "").replace(/[),.;!?]+$/g, "");
+}
+
+function resolveYtDlpBinary(): string {
+	const candidates = [
+		process.env.YT_DLP_PATH,
+		join(homedir(), ".pyenv", "shims", "yt-dlp"),
+		"yt-dlp",
+	].filter((candidate): candidate is string => Boolean(candidate));
+
+	for (const candidate of candidates) {
+		if (candidate.includes("/") && !existsSync(candidate)) {
+			continue;
+		}
+		return candidate;
+	}
+
+	return "yt-dlp";
 }

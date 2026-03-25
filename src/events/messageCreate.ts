@@ -1,18 +1,12 @@
 import { getVoiceConnection } from "@discordjs/voice";
-import type {
-	GuildMember,
-	Message,
-	TextChannel,
-	VoiceChannel,
-} from "discord.js";
+import type { GuildMember, Message, VoiceChannel } from "discord.js";
+import { config } from "../config/config";
 import { IyaResponse } from "../response/Iya";
-import { ChannelRegistryService } from "../services/ChannelRegistryService";
 import { MusicService } from "../services/MusicService";
 import type { IYAKind } from "../types";
-import { isValidYoutubeUrl } from "../utils/youtubeUtils";
+import { logDebug, logInfo } from "../utils/logger";
 import { handleTTS } from "../utils/useTTS";
-import { logInfo } from "../utils/logger";
-import { config } from "../config/config";
+import { extractYoutubeUrl } from "../utils/youtubeUtils";
 
 const iyaHandler = (message: Message, kind: IYAKind): void => {
 	logInfo(`Iya! trigger detected from ${message.author.username}`);
@@ -20,9 +14,16 @@ const iyaHandler = (message: Message, kind: IYAKind): void => {
 };
 
 export const messageCreateHandler = async (message: Message): Promise<void> => {
+	logDebug(
+		`messageCreate: guild=${message.guild?.id ?? "dm"} channel=${message.channelId} author=${message.author.id} bot=${message.author.bot} contentLength=${message.content.length}`,
+	);
+
 	// ボットのメッセージは無視
 	// ではなくて、このbot自身だけを無視する
-	if (message.author.id === config.clientId) return;
+	if (message.author.id === config.clientId) {
+		logDebug("messageCreate: このbot自身のメッセージなので無視します");
+		return;
+	}
 
 	// TTS機能の処理
 	await handleTTS(message);
@@ -69,16 +70,22 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		return;
 	}
 
-	if (isValidYoutubeUrl(message.content)) {
+	const youtubeUrl = extractYoutubeUrl(message.content);
+	if (youtubeUrl) {
 		// サーバー内のメッセージのみ処理
 		if (!message.guild) return;
 
-		// チャンネル登録サービスを取得
-		const channelRegistry = ChannelRegistryService.getInstance();
+		const musicService = MusicService.getInstance();
+		const activeTextChannelId = musicService.getCurrentTextChannelId();
+		if (!activeTextChannelId) {
+			logDebug("YouTube: join実行チャンネルが未設定のため無視します");
+			return;
+		}
 
-		// このチャンネルが登録されているか確認
-		if (!channelRegistry.isRegistered(message.guild.id, message.channelId)) {
-			// 登録されていないチャンネルのメッセージは無視
+		if (activeTextChannelId !== message.channelId) {
+			logDebug(
+				`YouTube: join実行チャンネル外のため無視します current=${activeTextChannelId} message=${message.channelId}`,
+			);
 			return;
 		}
 
@@ -86,6 +93,7 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		const voiceChannel = member?.voice.channel as VoiceChannel;
 
 		if (!voiceChannel) {
+			logDebug("YouTube: 投稿者がボイスチャンネルにいないため無視します");
 			return;
 		}
 
@@ -94,28 +102,26 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 
 		// 既存接続がない場合は処理しない（自動接続を防止）
 		if (!existingConnection) {
+			logDebug("YouTube: Botがボイスチャンネル未接続のため無視します");
 			return;
 		}
 
 		const currentVoiceChannelId = existingConnection?.joinConfig.channelId;
-		const musicService = MusicService.getInstance();
-		const textChannel = message.channel as TextChannel;
 
 		// 接続先が別のチャンネルである場合のみ接続処理を実行
 		if (currentVoiceChannelId !== voiceChannel.id) {
+			logDebug(
+				`YouTube: Bot接続先が別です current=${currentVoiceChannelId} user=${voiceChannel.id}`,
+			);
 			await message.reply(
 				"ボットが別のボイスチャンネルに参加しています。 `/join` コマンドでチャンネルを移動してください",
 			);
 			return;
 		}
-		if (textChannel.id !== musicService.getCurrentTextChannelId()) {
-			// テキストチャンネルの更新のみ行う
-			musicService.updateTextChannel(textChannel);
-		}
 
 		// URLをキューに追加
 		const response = await musicService.queueYoutubeUrl(
-			message.content,
+			youtubeUrl,
 			message.guild.id,
 		);
 		// レスポンスが空でない場合のみ返信（埋め込みメッセージが送信済みの場合は空文字が返る）
@@ -126,8 +132,6 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		// キューの処理を開始（再生中でなければ再生開始）
 		await musicService.processQueue();
 
-		logInfo(
-			`YouTube URL検出: ${message.content}, サーバー: ${message.guild.name}`,
-		);
+		logInfo(`YouTube URL検出: ${youtubeUrl}, サーバー: ${message.guild.name}`);
 	}
 };
