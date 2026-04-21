@@ -24,6 +24,7 @@ import {
 	estimateTokensGptOss20bFromText,
 	warmupTokenEstimator,
 } from "../../utils/tokenEstimator";
+import { checkCommandCooldown } from "../../utils/commandCooldown";
 import { generateAiTextWithUsage } from "../../utils/useAI";
 
 // Twitter/X URL検出とコンテンツ取得のヘルパー関数
@@ -76,6 +77,7 @@ const MAX_INPUT_TOKENS =
 const EMPTY_RESPONSE_RETRY_DELAY_MS = 60 * 1000;
 const EMPTY_RESPONSE_MAX_RETRIES = 3;
 const LENGTH_FINISH_MAX_RETRIES = 2;
+const DAILY_SUMMARY_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 const DAY_OF_WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
 
@@ -459,17 +461,27 @@ export const DailySummaryCommand: CommandDefinition = {
 		const startTime = getCurrentTimestamp();
 
 		try {
+			if (!interaction.guild) {
+				await interaction.reply({
+					content: "このコマンドはサーバー内でのみ使用できます。",
+					ephemeral: true,
+				});
+				return;
+			}
+
+			const canExecute = await checkCommandCooldown(interaction, {
+				commandName: "daily-summary",
+				cooldownMs: DAILY_SUMMARY_COOLDOWN_MS,
+			});
+
+			if (!canExecute) {
+				return;
+			}
+
 			await interaction.deferReply();
 
 			const highlight = interaction.options.getString("highlight");
 			const dateString = interaction.options.getString("date");
-
-			if (!interaction.guild) {
-				await interaction.editReply({
-					content: "このコマンドはサーバー内でのみ使用できます。",
-				});
-				return;
-			}
 
 			const summaryChannelId = dailyChannelService.getSummaryChannel(
 				interaction.guild.id,

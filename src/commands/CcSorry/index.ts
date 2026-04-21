@@ -6,9 +6,12 @@ import {
 import { JSDOM } from "jsdom";
 import sharp from "sharp";
 import type { CommandDefinition } from "../../types";
+import { checkCommandCooldown } from "../../utils/commandCooldown";
 import { getCurrentJSTDate, getLocalDateString } from "../../utils/dateUtils";
 import { logError } from "../../utils/logger";
 import { generateAiText } from "../../utils/useAI";
+
+const CC_SORRY_COOLDOWN_MS = 5 * 60 * 1000;
 
 // Geminiを使って反省文を株式会社Anthropicの謝罪文に整形
 const formatApologyText = async (originalText: string): Promise<string> => {
@@ -224,6 +227,15 @@ const CcSorryCommand: CommandDefinition = {
 	],
 	execute: async (interaction: ChatInputCommandInteraction) => {
 		try {
+			const canExecute = await checkCommandCooldown(interaction, {
+				commandName: "ccsorry",
+				cooldownMs: CC_SORRY_COOLDOWN_MS,
+			});
+
+			if (!canExecute) {
+				return;
+			}
+
 			await interaction.deferReply();
 
 			const text = interaction.options.getString("text");

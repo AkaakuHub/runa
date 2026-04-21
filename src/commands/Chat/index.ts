@@ -1,8 +1,11 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import type { CommandDefinition } from "../../types";
+import { checkCommandCooldown } from "../../utils/commandCooldown";
 import { logError } from "../../utils/logger";
 import { editAndFollowUpLongMessage } from "../../utils/messageUtils";
 import { chatWithAssistant } from "../../utils/useAI";
+
+const CHAT_COOLDOWN_MS = 5 * 60 * 1000;
 
 export const ChatCommand: CommandDefinition = {
 	name: "chat",
@@ -17,6 +20,15 @@ export const ChatCommand: CommandDefinition = {
 	],
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
 		try {
+			const canExecute = await checkCommandCooldown(interaction, {
+				commandName: "chat",
+				cooldownMs: CHAT_COOLDOWN_MS,
+			});
+
+			if (!canExecute) {
+				return;
+			}
+
 			await interaction.deferReply({
 				ephemeral: false,
 			});
