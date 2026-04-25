@@ -1,10 +1,17 @@
 import { getVoiceConnection } from "@discordjs/voice";
-import type { GuildMember, Message, VoiceChannel } from "discord.js";
+import {
+	AttachmentBuilder,
+	type GuildMember,
+	type Message,
+	type VoiceChannel,
+} from "discord.js";
 import { config } from "../config/config";
 import { IyaResponse } from "../response/Iya";
 import { MusicService } from "../services/MusicService";
 import type { IYAKind } from "../types";
 import { logDebug, logInfo } from "../utils/logger";
+import { detectSenryu } from "../utils/senryuDetector";
+import { buildSenryuReply, generateSenryuImage } from "../utils/senryuResponse";
 import { handleTTS } from "../utils/useTTS";
 import { extractYoutubeUrl } from "../utils/youtubeUtils";
 
@@ -27,6 +34,21 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 
 	// TTS機能の処理
 	await handleTTS(message);
+
+	const senryu = await detectSenryu(message.content);
+	if (senryu) {
+		logInfo(`川柳を検知しました: author=${message.author.username}`);
+		const messageAuthorName =
+			message.member?.displayName ?? message.author.username;
+		const imageBuffer = await generateSenryuImage(senryu, messageAuthorName);
+		const attachment = new AttachmentBuilder(imageBuffer, {
+			name: "senryu-washi.png",
+		});
+		await message.reply({
+			content: buildSenryuReply(senryu, messageAuthorName),
+			files: [attachment],
+		});
+	}
 
 	// がああパターンのチェック
 	const goosePattern = /が[ぁあ]{2,}/;
