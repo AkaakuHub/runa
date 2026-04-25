@@ -116,8 +116,22 @@ export class GomamayoService {
 		return (
 			majorPartOfSpeech === "空白" ||
 			majorPartOfSpeech === "補助記号" ||
+			this.isRepeatedInterjection(token) ||
 			EMOJI_PATTERN.test(token.surface)
 		);
+	}
+
+	private isRepeatedInterjection(token: Morpheme): boolean {
+		if (token.partOfSpeech[0] !== "感動詞") {
+			return false;
+		}
+
+		const surface = katakanaToHiragana(token.surface);
+		if (surface.length < 2) {
+			return false;
+		}
+
+		return [...surface].every((char) => char === surface[0]);
 	}
 
 	private isRepeatedWord(
