@@ -6,6 +6,7 @@ import {
 	type VoiceChannel,
 } from "discord.js";
 import { config } from "../config/config";
+import { handleGomamayoResponse } from "../response/Gomamayo";
 import { IyaResponse } from "../response/Iya";
 import { MusicService } from "../services/MusicService";
 import type { IYAKind } from "../types";
@@ -49,6 +50,8 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 			files: [attachment],
 		});
 	}
+
+	await handleGomamayoResponse(message);
 
 	// がああパターンのチェック
 	const goosePattern = /が[ぁあ]{2,}/;

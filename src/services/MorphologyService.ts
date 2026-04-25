@@ -5,7 +5,7 @@ import { logError, logInfo } from "../utils/logger";
 
 type SudachiMode = "A" | "B" | "C";
 
-interface Morpheme {
+export interface Morpheme {
 	surface: string;
 	dictionaryForm: string;
 	normalizedForm: string;

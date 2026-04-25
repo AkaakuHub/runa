@@ -1,29 +1,5 @@
 import { MorphologyService } from "../services/MorphologyService";
-
-const SMALL_KANA = new Set([
-	"ァ",
-	"ィ",
-	"ゥ",
-	"ェ",
-	"ォ",
-	"ャ",
-	"ュ",
-	"ョ",
-	"ヮ",
-	"ヵ",
-	"ヶ",
-	"ぁ",
-	"ぃ",
-	"ぅ",
-	"ぇ",
-	"ぉ",
-	"ゃ",
-	"ゅ",
-	"ょ",
-	"ゎ",
-]);
-
-const KANA_PATTERN = /[ァ-ヶーぁ-ゖ]/;
+import { hiraganaToKatakana, isKana, isSmallKana } from "./kana";
 const TARGET_MORA = [5, 7, 5] as const;
 const TARGET_TOTAL_MORA = TARGET_MORA.reduce((total, mora) => total + mora, 0);
 
@@ -57,19 +33,13 @@ function sanitizeMessageContent(text: string): string {
 		.trim();
 }
 
-function toKatakana(text: string): string {
-	return text.replace(/[ぁ-ゖ]/g, (char) =>
-		String.fromCharCode(char.charCodeAt(0) + 0x60),
-	);
-}
-
 function countMora(reading: string): number {
 	let count = 0;
-	for (const char of toKatakana(reading)) {
-		if (!KANA_PATTERN.test(char)) {
+	for (const char of hiraganaToKatakana(reading)) {
+		if (!isKana(char)) {
 			continue;
 		}
-		if (SMALL_KANA.has(char) && count > 0) {
+		if (isSmallKana(char) && count > 0) {
 			continue;
 		}
 		count++;
@@ -110,7 +80,7 @@ function toMoraTokens(
 		return [
 			{
 				surface: token.surface,
-				reading: toKatakana(reading),
+				reading: hiraganaToKatakana(reading),
 				mora,
 				partOfSpeech: token.partOfSpeech,
 			},
