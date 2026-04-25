@@ -155,6 +155,49 @@ function isAllowedMoraPattern(moraPattern: number[]): boolean {
 	return jiamariSegments <= MAX_JIAMARI_SEGMENTS;
 }
 
+function isIncompleteNonFinalSegmentEnd(token: MoraToken): boolean {
+	const majorPartOfSpeech = token.partOfSpeech[0] ?? "";
+	const subPartOfSpeech = token.partOfSpeech[1] ?? "";
+	const conjugationForm = token.partOfSpeech[5] ?? "";
+	const isIncompleteForm = /未然形|連用形/.test(conjugationForm);
+
+	if (majorPartOfSpeech === "助動詞" && isIncompleteForm) {
+		return true;
+	}
+
+	return (
+		majorPartOfSpeech === "動詞" &&
+		subPartOfSpeech === "非自立可能" &&
+		isIncompleteForm
+	);
+}
+
+function isInvalidSegmentStart(token: MoraToken): boolean {
+	const majorPartOfSpeech = token.partOfSpeech[0] ?? "";
+	return ["助詞", "助動詞", "接尾辞"].includes(majorPartOfSpeech);
+}
+
+function hasInvalidSegmentBoundary(
+	tokens: MoraToken[],
+	firstEnd: number,
+	secondEnd: number,
+): boolean {
+	const firstLastToken = tokens[firstEnd - 1];
+	const secondLastToken = tokens[secondEnd - 1];
+	const secondFirstToken = tokens[firstEnd];
+	const thirdFirstToken = tokens[secondEnd];
+	return (
+		!!firstLastToken &&
+		!!secondLastToken &&
+		!!secondFirstToken &&
+		!!thirdFirstToken &&
+		(isIncompleteNonFinalSegmentEnd(firstLastToken) ||
+			isIncompleteNonFinalSegmentEnd(secondLastToken) ||
+			isInvalidSegmentStart(secondFirstToken) ||
+			isInvalidSegmentStart(thirdFirstToken))
+	);
+}
+
 function findBestSenryuCandidateForWindowRange(
 	tokens: MoraToken[],
 	prefixSums: number[],
@@ -176,6 +219,9 @@ function findBestSenryuCandidateForWindowRange(
 			];
 
 			if (!isAllowedMoraPattern(moraPattern)) {
+				continue;
+			}
+			if (hasInvalidSegmentBoundary(tokens, firstEnd, secondEnd)) {
 				continue;
 			}
 
