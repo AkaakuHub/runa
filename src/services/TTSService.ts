@@ -672,12 +672,25 @@ export class TTSService {
 	 */
 	private async waitForPlaybackComplete(player: AudioPlayer): Promise<boolean> {
 		return new Promise((resolve) => {
+			const timeout = setTimeout(() => {
+				cleanup();
+				this.isPlaying = false;
+				this.currentPlaybackResource = null;
+				this.currentPlaybackGuildId = null;
+				resolve(false);
+			}, 30_000);
+
+			const cleanup = () => {
+				clearTimeout(timeout);
+				player.off(AudioPlayerStatus.Idle, finishHandler);
+				player.off("error", errorHandler);
+			};
+
 			const finishHandler = () => {
 				this.isPlaying = false;
 				this.currentPlaybackResource = null;
 				this.currentPlaybackGuildId = null;
-				player.off(AudioPlayerStatus.Idle, finishHandler);
-				player.off("error", errorHandler);
+				cleanup();
 				resolve(true);
 			};
 
@@ -685,13 +698,12 @@ export class TTSService {
 				this.isPlaying = false;
 				this.currentPlaybackResource = null;
 				this.currentPlaybackGuildId = null;
-				player.off(AudioPlayerStatus.Idle, finishHandler);
-				player.off("error", errorHandler);
-				resolve(true);
+				cleanup();
+				resolve(false);
 			};
 
-			player.on(AudioPlayerStatus.Idle, finishHandler);
-			player.on("error", errorHandler);
+			player.once(AudioPlayerStatus.Idle, finishHandler);
+			player.once("error", errorHandler);
 		});
 	}
 

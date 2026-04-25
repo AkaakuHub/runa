@@ -13,7 +13,7 @@ import { logDebug, logInfo } from "../utils/logger";
 import { detectSenryu } from "../utils/senryuDetector";
 import { buildSenryuReply, generateSenryuImage } from "../utils/senryuResponse";
 import { handleTTS } from "../utils/useTTS";
-import { extractYoutubeUrl } from "../utils/youtubeUtils";
+import { extractYoutubeUrls } from "../utils/youtubeUtils";
 
 const iyaHandler = (message: Message, kind: IYAKind): void => {
 	logInfo(`Iya! trigger detected from ${message.author.username}`);
@@ -92,8 +92,8 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		return;
 	}
 
-	const youtubeUrl = extractYoutubeUrl(message.content);
-	if (youtubeUrl) {
+	const youtubeUrls = extractYoutubeUrls(message.content);
+	if (youtubeUrls.length > 0) {
 		// サーバー内のメッセージのみ処理
 		if (!message.guild) return;
 
@@ -141,19 +141,21 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 			return;
 		}
 
-		// URLをキューに追加
-		const response = await musicService.queueYoutubeUrl(
-			youtubeUrl,
-			message.guild.id,
-		);
-		// レスポンスが空でない場合のみ返信（埋め込みメッセージが送信済みの場合は空文字が返る）
-		if (response) {
-			await message.reply(response);
+		for (const youtubeUrl of youtubeUrls) {
+			const response = await musicService.queueYoutubeUrl(
+				youtubeUrl,
+				message.guild.id,
+			);
+			if (response) {
+				await message.reply(response);
+			}
+
+			logInfo(
+				`YouTube URL検出: ${youtubeUrl}, サーバー: ${message.guild.name}`,
+			);
 		}
 
 		// キューの処理を開始（再生中でなければ再生開始）
 		await musicService.processQueue();
-
-		logInfo(`YouTube URL検出: ${youtubeUrl}, サーバー: ${message.guild.name}`);
 	}
 };

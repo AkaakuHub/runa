@@ -174,19 +174,22 @@ export async function updateYtdlp(): Promise<void> {
  * YouTube URLを検証
  */
 
-export function extractYoutubeUrl(content: string): string | null {
+export function extractYoutubeUrls(content: string): string[] {
 	const normalized = content.trim().replace(/^<|>$/g, "");
 	const directMatch = normalized.match(
 		/^(https?:\/\/)?((www|music)\.)?(youtube\.com|youtu\.be)\/\S+$/i,
 	);
 	if (directMatch) {
-		return normalizeYoutubeUrl(directMatch[0]);
+		return splitConcatenatedYoutubeUrls(directMatch[0]);
 	}
 
-	const embeddedMatch = content.match(
-		/(https?:\/\/(?:www\.|music\.)?(?:youtube\.com|youtu\.be)\/[^\s>]+)/i,
-	);
-	return embeddedMatch ? normalizeYoutubeUrl(embeddedMatch[0]) : null;
+	return Array.from(
+		content.matchAll(
+			/(https?:\/\/(?:www\.|music\.)?(?:youtube\.com|youtu\.be)\/[^\s<>]+?)(?=https?:\/\/|[\s>]|$)/gi,
+		),
+	)
+		.flatMap((match) => splitConcatenatedYoutubeUrls(match[0]))
+		.filter((url, index, urls) => urls.indexOf(url) === index);
 }
 
 /**
@@ -257,6 +260,27 @@ export function sanitizeYoutubeUrl(url: string): string {
 
 function normalizeYoutubeUrl(url: string): string {
 	return url.replace(/^<|>$/g, "").replace(/[),.;!?]+$/g, "");
+}
+
+function splitConcatenatedYoutubeUrls(url: string): string[] {
+	const normalized = normalizeYoutubeUrl(url);
+	const startIndexes = Array.from(
+		normalized.matchAll(
+			/https?:\/\/(?:www\.|music\.)?(?:youtube\.com|youtu\.be)\//gi,
+		),
+		(match) => match.index ?? 0,
+	);
+
+	if (startIndexes.length <= 1) {
+		return [normalized];
+	}
+
+	return startIndexes
+		.map((startIndex, index) => {
+			const endIndex = startIndexes[index + 1] ?? normalized.length;
+			return normalizeYoutubeUrl(normalized.slice(startIndex, endIndex));
+		})
+		.filter(Boolean);
 }
 
 function resolveYtDlpBinary(): string {

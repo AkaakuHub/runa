@@ -14,11 +14,8 @@ import { logDebug, logError } from "./logger";
 const PCM_SAMPLE_RATE = 48_000;
 const PCM_CHANNELS = 2;
 const PCM_BYTES_PER_SAMPLE = 2;
-const SILENCE_FRAME_MS = 20;
 const SILENCE_FRAME_BYTES =
-	(PCM_SAMPLE_RATE / (1000 / SILENCE_FRAME_MS)) *
-	PCM_CHANNELS *
-	PCM_BYTES_PER_SAMPLE;
+	(PCM_SAMPLE_RATE / 50) * PCM_CHANNELS * PCM_BYTES_PER_SAMPLE;
 const SILENCE_FRAME = Buffer.alloc(SILENCE_FRAME_BYTES);
 
 interface RealtimeAudioMixerOptions {
@@ -29,16 +26,16 @@ interface RealtimeAudioMixerOptions {
 class PCMInputFeeder {
 	private readonly target: Writable;
 	private readonly label: string;
-	private silenceTimer?: NodeJS.Timeout;
 	private activeSource?: Readable;
 	private destroyed = false;
 	private gain = 1;
+	private silenceLoopScheduled = false;
 
 	public constructor(target: Writable, label: string, initialGain: number) {
 		this.target = target;
 		this.label = label;
 		this.gain = clampVolume(initialGain);
-		this.startSilenceLoop();
+		this.scheduleSilenceLoop();
 	}
 
 	public async pipeFrom(source: Readable): Promise<void> {
@@ -61,6 +58,7 @@ class PCMInputFeeder {
 				source.off("close", onEnd);
 				source.off("error", onError);
 				this.target.off("drain", onDrain);
+				this.scheduleSilenceLoop();
 			};
 
 			const onDrain = () => {
@@ -102,28 +100,40 @@ class PCMInputFeeder {
 
 	public destroy(): void {
 		this.destroyed = true;
-		if (this.silenceTimer) {
-			clearInterval(this.silenceTimer);
-			this.silenceTimer = undefined;
-		}
 		if (!this.target.destroyed) {
 			this.target.end();
 		}
 	}
 
-	private startSilenceLoop(): void {
-		this.silenceTimer = setInterval(() => {
-			if (this.destroyed || this.activeSource || this.target.destroyed) {
+	private scheduleSilenceLoop(): void {
+		if (this.silenceLoopScheduled || this.destroyed || this.activeSource) {
+			return;
+		}
+
+		this.silenceLoopScheduled = true;
+		setImmediate(() => {
+			this.silenceLoopScheduled = false;
+			this.writeSilenceFrame();
+		});
+	}
+
+	private writeSilenceFrame(): void {
+		if (this.destroyed || this.activeSource || this.target.destroyed) {
+			return;
+		}
+
+		try {
+			if (this.target.write(SILENCE_FRAME)) {
+				this.scheduleSilenceLoop();
 				return;
 			}
 
-			try {
-				this.target.write(SILENCE_FRAME);
-			} catch (error) {
-				logError(`${this.label} silence write error: ${error}`);
-			}
-		}, SILENCE_FRAME_MS);
-		this.silenceTimer.unref();
+			this.target.once("drain", () => {
+				this.writeSilenceFrame();
+			});
+		} catch (error) {
+			logError(`${this.label} silence write error: ${error}`);
+		}
 	}
 
 	private applyGain(chunk: Buffer): Buffer {
@@ -239,6 +249,7 @@ export class RealtimeAudioMixer {
 	private ttsChain: Promise<boolean> = Promise.resolve(true);
 	private ttsQueueVersion = 0;
 	private stopped = false;
+	private readonly mixerClosed: Promise<void>;
 
 	public constructor(options: RealtimeAudioMixerOptions) {
 		const filterGraph = buildFilterGraph();
@@ -282,6 +293,20 @@ export class RealtimeAudioMixer {
 		);
 
 		this.mixerProcess = mixerProcess;
+		this.mixerClosed = new Promise<void>((resolve, reject) => {
+			mixerProcess.once("error", reject);
+			mixerProcess.once("close", (code, signal) => {
+				logDebug(`ffmpeg mixer closed code=${code} signal=${signal}`);
+				if (code === 0 || signal === "SIGTERM" || signal === "SIGKILL") {
+					resolve();
+					return;
+				}
+
+				reject(
+					new Error(`ffmpeg mixer exited with code=${code} signal=${signal}`),
+				);
+			});
+		});
 		this.musicFeeder = new PCMInputFeeder(
 			mixerProcess.stdio[3] as Writable,
 			"music-mixer",
@@ -311,10 +336,6 @@ export class RealtimeAudioMixer {
 		(mixerProcess.stdio[4] as Writable | undefined)?.on("error", (error) => {
 			logDebug(`ffmpeg mixer tts pipe closed: ${error}`);
 		});
-
-		mixerProcess.on("close", (code, signal) => {
-			logDebug(`ffmpeg mixer closed code=${code} signal=${signal}`);
-		});
 	}
 
 	public createResource(): AudioResource {
@@ -325,7 +346,6 @@ export class RealtimeAudioMixer {
 
 		return createAudioResource(stdout, {
 			inputType: StreamType.Raw,
-			inlineVolume: true,
 		});
 	}
 
@@ -405,6 +425,25 @@ export class RealtimeAudioMixer {
 		this.mixerProcess = undefined;
 	}
 
+	public async finalize(): Promise<void> {
+		if (this.stopped) {
+			await this.mixerClosed.catch((error) => {
+				logDebug(`ffmpeg mixer finalize skipped: ${error}`);
+			});
+			return;
+		}
+
+		this.stopped = true;
+		this.musicFeeder?.destroy();
+		this.ttsFeeder?.destroy();
+
+		try {
+			await this.mixerClosed;
+		} finally {
+			this.mixerProcess = undefined;
+		}
+	}
+
 	private async playTtsFile(audioFile: string): Promise<boolean> {
 		if (this.stopped || !this.ttsFeeder) {
 			return false;
@@ -436,7 +475,7 @@ export class RealtimeAudioMixer {
 }
 
 function buildFilterGraph(): string {
-	return "[1:a]asplit=2[tts_sidechain][tts_mix];[0:a]anull[music_in];[music_in][tts_sidechain]sidechaincompress=threshold=0.02:ratio=10:attack=12:release=220[ducked];[ducked][tts_mix]amix=inputs=2:normalize=0:dropout_transition=0,alimiter=limit=0.98[out]";
+	return "[0:a]aresample=async=1:first_pts=0[music_in];[1:a]aresample=async=1:first_pts=0,asplit=2[tts_sidechain][tts_mix];[music_in][tts_sidechain]sidechaincompress=threshold=0.02:ratio=10:attack=12:release=220[ducked];[ducked][tts_mix]amix=inputs=2:normalize=0:dropout_transition=0.15,alimiter=limit=0.98[out]";
 }
 
 function clampVolume(volume: number): number {

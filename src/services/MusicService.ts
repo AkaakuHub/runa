@@ -299,9 +299,11 @@ export class MusicService {
 
 	public async processQueue(): Promise<void> {
 		if (this.isPlaying) {
+			logInfo("processQueue中止: 既に再生中です");
 			return;
 		}
 
+		logInfo("processQueueからplayNextを呼び出します");
 		await this.playNext();
 	}
 
@@ -350,27 +352,7 @@ export class MusicService {
 				0xffaa00,
 				"準備中",
 			);
-			const success = await this.playWithStreaming(nextItem, guildId);
-			this.isPlaying = false;
-			this.currentPlayingUrl = undefined;
-
-			if (!success) {
-				await this.handleErrorWithRetry();
-				return;
-			}
-
-			this.retryCount = 0;
-			await this.updateStatusMessage(
-				`再生完了: ${nextItem}`,
-				0xffaa00,
-				this.skipRequested ? "スキップ完了" : "再生完了",
-			);
-
-			setTimeout(() => {
-				if (!this.isPlaying) {
-					this.playNext();
-				}
-			}, 1000);
+			void this.playWithStreaming(nextItem, guildId);
 		} catch (error) {
 			logError(`playNext: 再生エラー全体: ${error}`);
 			this.isPlaying = false;
@@ -516,6 +498,7 @@ export class MusicService {
 
 			setTimeout(() => {
 				this.isPlaying = false;
+				logInfo("handleErrorWithRetryからplayNextを呼び出します");
 				this.playNext();
 			}, 2000 * this.retryCount);
 			return;
@@ -534,13 +517,11 @@ export class MusicService {
 		this.queueManager.removeFromQueue(guildId, this.currentPlayingUrl);
 		this.currentPlayingUrl = undefined;
 		this.isPlaying = false;
+		logInfo("handleErrorWithRetry(最大再試行到達)からplayNextを呼び出します");
 		this.playNext();
 	}
 
-	private async playWithStreaming(
-		url: string,
-		guildId: string,
-	): Promise<boolean> {
+	private async playWithStreaming(url: string, guildId: string): Promise<void> {
 		try {
 			logDebug(`ストリーミング再生開始: ${url}`);
 
@@ -554,29 +535,33 @@ export class MusicService {
 					"エラー",
 					true,
 				);
-				return false;
+				await this.handleErrorWithRetry();
+				return;
 			}
 
 			const connection = getVoiceConnection(guildId);
 			if (!connection) {
 				logError("ストリーミング再生中にボイス接続が失われました");
-				return false;
+				await this.handleErrorWithRetry();
+				return;
 			}
 
 			this.stopMixer();
 			const ttsService = TTSService.getInstance();
 			const musicVolume = ttsService.getMusicVolumeForGuild(guildId);
 			const ttsVolume = ttsService.getVolumeForGuild(guildId);
-			this.currentMixer = new RealtimeAudioMixer({
+			const mixer = new RealtimeAudioMixer({
 				musicVolume,
 				ttsVolume,
 			});
-			const resource = this.currentMixer.createResource();
+			this.currentMixer = mixer;
+			const resource = mixer.createResource();
 			this.currentResource = resource;
 			if (resource.volume) {
 				resource.volume.setVolume(1);
 			}
 
+			this.attachTrackLifecycle(url);
 			connection.subscribe(this.player);
 			this.player.play(resource);
 
@@ -586,21 +571,93 @@ export class MusicService {
 				"再生中",
 			);
 
-			await this.currentMixer.playMusicStream(stream);
-			await this.currentMixer.waitForTtsDrain();
-			return true;
+			await mixer.playMusicStream(stream);
+			await mixer.waitForTtsDrain();
+			await this.closeMixerGracefully(mixer);
 		} catch (error) {
-			if (this.skipRequested) {
-				return true;
-			}
-
 			logError(`ストリーミング再生エラー: ${error}`);
-			return false;
-		} finally {
-			this.currentResource = null;
+			if (this.skipRequested) {
+				return;
+			}
 			this.stopMixer();
 			this.player.stop(true);
+			await this.handleErrorWithRetry();
+		} finally {
+			this.currentResource = null;
 		}
+	}
+
+	private attachTrackLifecycle(url: string): void {
+		let settled = false;
+
+		const cleanup = () => {
+			this.player.off(AudioPlayerStatus.Idle, onIdle);
+			this.player.off("error", onError);
+		};
+
+		const finalizeSuccess = async () => {
+			if (settled || this.currentPlayingUrl !== url) {
+				return;
+			}
+			settled = true;
+			cleanup();
+			logInfo(`track lifecycle finalizeSuccess: ${url}`);
+			this.isPlaying = false;
+			this.currentPlayingUrl = undefined;
+			this.retryCount = 0;
+			await this.updateStatusMessage(
+				`再生完了: ${url}`,
+				0xffaa00,
+				this.skipRequested ? "スキップ完了" : "再生完了",
+			);
+			setTimeout(() => {
+				if (!this.isPlaying) {
+					logInfo(
+						"attachTrackLifecycle(finalizeSuccess)からplayNextを呼び出します",
+					);
+					void this.playNext();
+				}
+			}, 1000);
+		};
+
+		const finalizeError = async (error: Error) => {
+			if (settled || this.currentPlayingUrl !== url) {
+				return;
+			}
+			settled = true;
+			cleanup();
+			logInfo(`track lifecycle finalizeError: ${url}`);
+			logWarn(`AudioPlayer track error: ${error.message}`);
+			this.isPlaying = false;
+			await this.handleErrorWithRetry();
+		};
+
+		const onIdle = () => {
+			logInfo(`AudioPlayerStatus.Idleを検知: ${url}`);
+			void finalizeSuccess();
+		};
+
+		const onError = (error: Error) => {
+			logInfo(`AudioPlayer errorを検知: ${url}`);
+			void finalizeError(error);
+		};
+
+		this.player.once(AudioPlayerStatus.Idle, onIdle);
+		this.player.once("error", onError);
+	}
+
+	private async closeMixerGracefully(
+		mixer?: RealtimeAudioMixer,
+	): Promise<void> {
+		const targetMixer = mixer ?? this.currentMixer;
+		if (!targetMixer) {
+			return;
+		}
+
+		if (this.currentMixer === targetMixer) {
+			this.currentMixer = undefined;
+		}
+		await targetMixer.finalize();
 	}
 
 	private stopMixer(): void {
