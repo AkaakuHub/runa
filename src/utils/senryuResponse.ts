@@ -153,7 +153,7 @@ function formatPoetName(poetName: string): string {
 	}
 
 	const chars = Array.from(normalized);
-	return chars.length > 8 ? `${chars.slice(0, 7).join("")}…` : normalized;
+	return chars.length > 24 ? `${chars.slice(0, 23).join("")}…` : normalized;
 }
 
 function appendVerticalLabel(

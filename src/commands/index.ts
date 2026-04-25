@@ -7,6 +7,7 @@ import { DailySummaryCommand } from "./DailySummary";
 import { DebianCommand } from "./Debian";
 import { FxCommand } from "./Fx";
 import { HistorySearchCommand } from "./HistorySearch";
+import { IsSenryuCommand } from "./IsSenryu";
 import { ByeCommand } from "./Music/bye";
 import { JoinCommand } from "./Music/join";
 import { ListCommand } from "./Music/list";
@@ -29,6 +30,7 @@ const commandsList: CommandDefinition[] = [
 	DailySummaryCommand,
 	DailyConfigCommand,
 	HistorySearchCommand,
+	IsSenryuCommand,
 	CcSorryCommand,
 	JoinCommand,
 	ByeCommand,

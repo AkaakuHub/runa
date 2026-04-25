@@ -3,6 +3,7 @@ import type { CommandDefinition } from "../../types";
 import { MorphologyService } from "../../services/MorphologyService";
 import { logError } from "../../utils/logger";
 import { editAndFollowUpLongMessage } from "../../utils/messageUtils";
+import { formatSudachiTokens } from "../../utils/sudachiFormatter";
 
 const formatTokens = (tokensLength: number, body: string): string => {
 	return `解析結果\n- トークン数: ${tokensLength}\n\n${body}`;
@@ -35,14 +36,7 @@ export const SudachiCommand: CommandDefinition = {
 				return;
 			}
 
-			const body = tokens
-				.slice(0, limit)
-				.map((token, index) => {
-					const pos = token.partOfSpeech.filter((item) => item && item !== "*");
-					const posText = pos.length > 0 ? pos.join("・") : "品詞情報なし";
-					return `${index + 1}. ${token.surface} / ${token.dictionaryForm} / 読み: ${token.reading || "-"} / ${posText}`;
-				})
-				.join("\n");
+			const body = formatSudachiTokens(tokens, limit);
 
 			await editAndFollowUpLongMessage(
 				interaction,

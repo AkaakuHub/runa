@@ -10,7 +10,7 @@ import { handleGomamayoResponse } from "../response/Gomamayo";
 import { IyaResponse } from "../response/Iya";
 import { MusicService } from "../services/MusicService";
 import type { IYAKind } from "../types";
-import { logDebug, logInfo } from "../utils/logger";
+import { logDebug, logError, logInfo } from "../utils/logger";
 import { detectSenryu } from "../utils/senryuDetector";
 import { buildSenryuReply, generateSenryuImage } from "../utils/senryuResponse";
 import { handleTTS } from "../utils/useTTS";
@@ -41,14 +41,20 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		logInfo(`川柳を検知しました: author=${message.author.username}`);
 		const messageAuthorName =
 			message.member?.displayName ?? message.author.username;
-		const imageBuffer = await generateSenryuImage(senryu, messageAuthorName);
-		const attachment = new AttachmentBuilder(imageBuffer, {
-			name: "senryu-washi.png",
-		});
-		await message.reply({
-			content: buildSenryuReply(senryu, messageAuthorName),
-			files: [attachment],
-		});
+		const replyContent = buildSenryuReply(senryu, messageAuthorName);
+		try {
+			const imageBuffer = await generateSenryuImage(senryu, messageAuthorName);
+			const attachment = new AttachmentBuilder(imageBuffer, {
+				name: "senryu-washi.png",
+			});
+			await message.reply({
+				content: replyContent,
+				files: [attachment],
+			});
+		} catch (error) {
+			logError(`川柳画像生成に失敗しました: ${error}`);
+			await message.reply(replyContent);
+		}
 	}
 
 	await handleGomamayoResponse(message);
