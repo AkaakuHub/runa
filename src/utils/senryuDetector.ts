@@ -149,6 +149,12 @@ function isUnfinishedEndingToken(token: MoraToken): boolean {
 	);
 }
 
+function isSentenceEndingAuxiliary(token: MoraToken): boolean {
+	const majorPartOfSpeech = getMajorPartOfSpeech(token);
+	const conjugationForm = token.partOfSpeech[5] ?? "";
+	return majorPartOfSpeech === "助動詞" && /終止形/.test(conjugationForm);
+}
+
 function buildMoraPrefixSums(tokens: MoraToken[]): number[] {
 	const prefixSums = [0];
 	for (const token of tokens) {
@@ -179,6 +185,7 @@ function isMeaningfulSegmentRange(
 	tokens: MoraToken[],
 	start: number,
 	end: number,
+	segmentIndex: number,
 ): boolean {
 	const firstToken = tokens[start];
 	const lastToken = tokens[end - 1];
@@ -186,7 +193,24 @@ function isMeaningfulSegmentRange(
 		return false;
 	}
 
-	return isContentStartToken(firstToken) && !isUnfinishedEndingToken(lastToken);
+	if (!isContentStartToken(firstToken) || isUnfinishedEndingToken(lastToken)) {
+		return false;
+	}
+
+	if (segmentIndex < 2 && isSentenceEndingAuxiliary(lastToken)) {
+		return false;
+	}
+
+	const conjugationForm = lastToken.partOfSpeech[5] ?? "";
+	if (
+		segmentIndex === 2 &&
+		getMajorPartOfSpeech(lastToken) === "動詞" &&
+		/連用形/.test(conjugationForm)
+	) {
+		return false;
+	}
+
+	return true;
 }
 
 function isMeaningfulSegmentSet(
@@ -197,9 +221,9 @@ function isMeaningfulSegmentSet(
 	end: number,
 ): boolean {
 	return (
-		isMeaningfulSegmentRange(tokens, start, firstEnd) &&
-		isMeaningfulSegmentRange(tokens, firstEnd, secondEnd) &&
-		isMeaningfulSegmentRange(tokens, secondEnd, end)
+		isMeaningfulSegmentRange(tokens, start, firstEnd, 0) &&
+		isMeaningfulSegmentRange(tokens, firstEnd, secondEnd, 1) &&
+		isMeaningfulSegmentRange(tokens, secondEnd, end, 2)
 	);
 }
 
