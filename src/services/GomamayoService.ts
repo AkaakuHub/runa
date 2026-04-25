@@ -13,6 +13,7 @@ interface GomamayoResult {
 interface PronunciationToken {
 	surface: string;
 	pronunciation: string;
+	partOfSpeech: string[];
 }
 
 const NEGATIVE_RESULT: GomamayoResult = {
@@ -54,7 +55,7 @@ export class GomamayoService {
 		for (let i = 0; i < pronunciationTokens.length - 1; i += 1) {
 			const current = pronunciationTokens[i];
 			const next = pronunciationTokens[i + 1];
-			if (this.isRepeatedWord(current, next)) {
+			if (!this.isGomamayoPair(current, next)) {
 				continue;
 			}
 
@@ -107,6 +108,7 @@ export class GomamayoService {
 			.map((token) => ({
 				surface: token.surface,
 				pronunciation: this.toPronunciation(token),
+				partOfSpeech: token.partOfSpeech,
 			}))
 			.filter((token) => token.pronunciation.length > 0);
 	}
@@ -115,6 +117,7 @@ export class GomamayoService {
 		const majorPartOfSpeech = token.partOfSpeech[0] ?? "";
 		return (
 			majorPartOfSpeech === "空白" ||
+			majorPartOfSpeech === "記号" ||
 			majorPartOfSpeech === "補助記号" ||
 			this.isRepeatedInterjection(token) ||
 			EMOJI_PATTERN.test(token.surface)
@@ -132,6 +135,21 @@ export class GomamayoService {
 		}
 
 		return [...surface].every((char) => char === surface[0]);
+	}
+
+	private isGomamayoPair(
+		current: PronunciationToken,
+		next: PronunciationToken,
+	): boolean {
+		return (
+			this.isGomamayoWord(current) &&
+			this.isGomamayoWord(next) &&
+			!this.isRepeatedWord(current, next)
+		);
+	}
+
+	private isGomamayoWord(token: PronunciationToken): boolean {
+		return token.partOfSpeech[0] === "名詞";
 	}
 
 	private isRepeatedWord(
