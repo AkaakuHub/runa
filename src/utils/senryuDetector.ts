@@ -25,14 +25,7 @@ const SMALL_KANA = new Set([
 
 const KANA_PATTERN = /[ァ-ヶーぁ-ゖ]/;
 const TARGET_MORA = [5, 7, 5] as const;
-const MAX_MORA_DEVIATION_PER_SEGMENT = 1;
-const MAX_DEVIATED_SEGMENTS = 1;
-const MIN_TOTAL_MORA =
-	TARGET_MORA.reduce((total, mora) => total + mora, 0) -
-	MAX_MORA_DEVIATION_PER_SEGMENT * MAX_DEVIATED_SEGMENTS;
-const MAX_TOTAL_MORA =
-	TARGET_MORA.reduce((total, mora) => total + mora, 0) +
-	MAX_MORA_DEVIATION_PER_SEGMENT * MAX_DEVIATED_SEGMENTS;
+const TARGET_TOTAL_MORA = TARGET_MORA.reduce((total, mora) => total + mora, 0);
 
 interface MoraToken {
 	surface: string;
@@ -60,7 +53,7 @@ function sanitizeMessageContent(text: string): string {
 		.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s<>()]+/gi, " ")
 		.replace(/<a?:\w+:[\d-]+>/g, " ")
 		.replace(/<[@#][!&]?\d+>/g, " ")
-		.replace(/\s+/g, " ")
+		.replace(/\s+/g, "")
 		.trim();
 }
 
@@ -155,8 +148,18 @@ function isSentenceEndingAuxiliary(token: MoraToken): boolean {
 	return majorPartOfSpeech === "助動詞" && /終止形/.test(conjugationForm);
 }
 
+function isClauseDanglingParticle(token: MoraToken): boolean {
+	if (token.partOfSpeech[0] !== "助詞") {
+		return false;
+	}
+	return ["接続助詞", "格助詞", "係助詞"].includes(token.partOfSpeech[1] ?? "");
+}
+
 function isIncompleteFinalToken(token: MoraToken): boolean {
 	const majorPartOfSpeech = getMajorPartOfSpeech(token);
+	if (isClauseDanglingParticle(token)) {
+		return true;
+	}
 	if (majorPartOfSpeech === "形状詞" || majorPartOfSpeech === "連体詞") {
 		return true;
 	}
@@ -233,19 +236,7 @@ function isMeaningfulSegmentSet(
 }
 
 function isAllowedMoraPattern(moraPattern: number[]): boolean {
-	let deviatedSegments = 0;
-
-	for (const [index, mora] of moraPattern.entries()) {
-		const deviation = Math.abs(mora - TARGET_MORA[index]);
-		if (deviation > MAX_MORA_DEVIATION_PER_SEGMENT) {
-			return false;
-		}
-		if (deviation > 0) {
-			deviatedSegments++;
-		}
-	}
-
-	return deviatedSegments <= MAX_DEVIATED_SEGMENTS;
+	return moraPattern.every((mora, index) => mora === TARGET_MORA[index]);
 }
 
 function findBestSenryuCandidateForWindowRange(
@@ -256,7 +247,7 @@ function findBestSenryuCandidateForWindowRange(
 ): SenryuCandidate | null {
 	let bestCandidate: SenryuCandidate | null = null;
 	const totalMora = sumMora(prefixSums, start, end);
-	if (totalMora < MIN_TOTAL_MORA || totalMora > MAX_TOTAL_MORA) {
+	if (totalMora !== TARGET_TOTAL_MORA) {
 		return null;
 	}
 
