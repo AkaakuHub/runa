@@ -152,7 +152,13 @@ function isClauseDanglingParticle(token: MoraToken): boolean {
 	if (token.partOfSpeech[0] !== "助詞") {
 		return false;
 	}
-	return ["接続助詞", "格助詞", "係助詞"].includes(token.partOfSpeech[1] ?? "");
+
+	const particleKind = token.partOfSpeech[1] ?? "";
+	if (particleKind === "接続助詞" || particleKind === "係助詞") {
+		return true;
+	}
+
+	return particleKind === "格助詞" && token.surface === "が";
 }
 
 function isIncompleteFinalToken(token: MoraToken): boolean {
