@@ -26,7 +26,7 @@ const SMALL_KANA = new Set([
 const KANA_PATTERN = /[ァ-ヶーぁ-ゖ]/;
 const TARGET_MORA = [5, 7, 5] as const;
 const MAX_MORA_DEVIATION_PER_SEGMENT = 1;
-const MAX_DEVIATED_SEGMENTS = 2;
+const MAX_DEVIATED_SEGMENTS = 1;
 const MIN_TOTAL_MORA =
 	TARGET_MORA.reduce((total, mora) => total + mora, 0) -
 	MAX_MORA_DEVIATION_PER_SEGMENT * MAX_DEVIATED_SEGMENTS;
@@ -155,6 +155,16 @@ function isSentenceEndingAuxiliary(token: MoraToken): boolean {
 	return majorPartOfSpeech === "助動詞" && /終止形/.test(conjugationForm);
 }
 
+function isIncompleteFinalToken(token: MoraToken): boolean {
+	const majorPartOfSpeech = getMajorPartOfSpeech(token);
+	if (majorPartOfSpeech === "形状詞" || majorPartOfSpeech === "連体詞") {
+		return true;
+	}
+
+	const conjugationForm = token.partOfSpeech[5] ?? "";
+	return majorPartOfSpeech === "動詞" && /連用形/.test(conjugationForm);
+}
+
 function buildMoraPrefixSums(tokens: MoraToken[]): number[] {
 	const prefixSums = [0];
 	for (const token of tokens) {
@@ -201,12 +211,7 @@ function isMeaningfulSegmentRange(
 		return false;
 	}
 
-	const conjugationForm = lastToken.partOfSpeech[5] ?? "";
-	if (
-		segmentIndex === 2 &&
-		getMajorPartOfSpeech(lastToken) === "動詞" &&
-		/連用形/.test(conjugationForm)
-	) {
+	if (segmentIndex === 2 && isIncompleteFinalToken(lastToken)) {
 		return false;
 	}
 
