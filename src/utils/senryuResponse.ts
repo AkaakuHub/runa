@@ -15,6 +15,31 @@ const sagePrefixes = [
 	"ほう、風流な響きじゃ。わしが巻物にしたためておいたぞい。",
 ];
 
+const rotatedVerticalChars = new Set([
+	"ー",
+	"ｰ",
+	"-",
+	"‐",
+	"‑",
+	"‒",
+	"–",
+	"—",
+	"―",
+	"−",
+	"～",
+	"〜",
+]);
+
+function toVerticalChars(text: string): string[] {
+	return Array.from(
+		text
+			.replace(/\.{3}/g, "︙")
+			.replace(/\.{2}/g, "︰")
+			.replace(/…/g, "︙")
+			.replace(/‥/g, "︰"),
+	);
+}
+
 function pickSagePrefix(seed: string): string {
 	let total = 0;
 	for (const char of seed) {
@@ -96,7 +121,7 @@ function createPaperTexture(
 		.attr("opacity", 0.9);
 }
 
-function appendVerticalColumn(
+function appendVerticalText(
 	svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
 	text: string,
 	x: number,
@@ -105,18 +130,23 @@ function appendVerticalColumn(
 	fill: string,
 	letterSpacing: number,
 ): void {
-	const chars = text.split("");
+	const chars = toVerticalChars(text);
 	chars.forEach((char, index) => {
-		svg
+		const y = startY + index * letterSpacing;
+		const textElement = svg
 			.append("text")
 			.attr("x", x)
-			.attr("y", startY + index * letterSpacing)
+			.attr("y", y)
 			.attr("font-family", brushFontFamily)
 			.attr("font-size", fontSize)
 			.attr("text-anchor", "middle")
 			.attr("dominant-baseline", "central")
 			.attr("fill", fill)
 			.text(char);
+
+		if (rotatedVerticalChars.has(char)) {
+			textElement.attr("transform", `rotate(90 ${x} ${y})`);
+		}
 	});
 }
 
@@ -128,21 +158,26 @@ function appendSealText(
 	fontSize: number,
 	fill: string,
 ): void {
-	const chars = text.split("");
+	const chars = toVerticalChars(text);
 	const letterSpacing = fontSize + 2;
 	const startY = y - ((chars.length - 1) * letterSpacing) / 2;
 
 	chars.forEach((char, index) => {
-		svg
+		const charY = startY + index * letterSpacing;
+		const textElement = svg
 			.append("text")
 			.attr("x", x)
-			.attr("y", startY + index * letterSpacing)
+			.attr("y", charY)
 			.attr("font-family", brushFontFamily)
 			.attr("font-size", fontSize)
 			.attr("text-anchor", "middle")
 			.attr("dominant-baseline", "central")
 			.attr("fill", fill)
 			.text(char);
+
+		if (rotatedVerticalChars.has(char)) {
+			textElement.attr("transform", `rotate(90 ${x} ${charY})`);
+		}
 	});
 }
 
@@ -156,30 +191,6 @@ function formatPoetName(poetName: string): string {
 	return chars.length > 24 ? `${chars.slice(0, 23).join("")}…` : normalized;
 }
 
-function appendVerticalLabel(
-	svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
-	text: string,
-	x: number,
-	startY: number,
-	fontSize: number,
-	fill: string,
-	letterSpacing: number,
-): void {
-	const chars = text.split("");
-	chars.forEach((char, index) => {
-		svg
-			.append("text")
-			.attr("x", x)
-			.attr("y", startY + index * letterSpacing)
-			.attr("font-family", brushFontFamily)
-			.attr("font-size", fontSize)
-			.attr("text-anchor", "middle")
-			.attr("dominant-baseline", "central")
-			.attr("fill", fill)
-			.text(char);
-	});
-}
-
 function appendPoetName(
 	svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
 	poetName: string,
@@ -191,7 +202,7 @@ function appendPoetName(
 	const text = formatPoetName(poetName);
 	const startY = bottomY - (Array.from(text).length - 1) * letterSpacing;
 
-	appendVerticalLabel(svg, text, x, startY, fontSize, "#4d3a27", letterSpacing);
+	appendVerticalText(svg, text, x, startY, fontSize, "#4d3a27", letterSpacing);
 }
 
 async function assertBrushFontInstalled(): Promise<void> {
@@ -244,11 +255,11 @@ export async function generateSenryuImage(
 		.attr("stroke-width", 3)
 		.attr("opacity", 0.65);
 
-	appendVerticalColumn(svg, "川柳発見", width - 92, 130, 34, "#5b2e12", 44);
+	appendVerticalText(svg, "川柳発見", width - 92, 130, 34, "#5b2e12", 44);
 
 	const columnXs = [610, 450, 290];
 	result.segments.forEach((segment, index) => {
-		appendVerticalColumn(svg, segment, columnXs[index], 240, 90, "#16110d", 96);
+		appendVerticalText(svg, segment, columnXs[index], 240, 90, "#16110d", 96);
 	});
 
 	const sealSize = 72;
