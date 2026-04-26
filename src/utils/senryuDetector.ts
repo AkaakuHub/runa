@@ -3,12 +3,7 @@ import type { Morpheme } from "../services/MorphologyService";
 import { hiraganaToKatakana, isKana, isSmallKana } from "./kana";
 const TARGET_MORA = [5, 7, 5] as const;
 const TARGET_TOTAL_MORA = TARGET_MORA.reduce((total, mora) => total + mora, 0);
-const MAX_JIAMARI_SEGMENTS = 1;
 const MAX_JIAMARI_PER_SEGMENT = 1;
-const CLASSICAL_READING_OVERRIDES = new Map<string, string>([
-	["庵", "イホ"],
-	["荒み", "アラミ"],
-]);
 
 interface MoraToken {
 	surface: string;
@@ -93,10 +88,7 @@ function toMoraTokens(
 			return [];
 		}
 
-		const reading =
-			CLASSICAL_READING_OVERRIDES.get(token.surface) ||
-			token.reading ||
-			token.surface;
+		const reading = token.reading || token.surface;
 		const mora = countMora(reading);
 		if (mora === 0) {
 			return [];
@@ -140,7 +132,6 @@ function buildReading(tokens: MoraToken[], start: number, end: number): string {
 }
 
 function isAllowedMoraPattern(moraPattern: number[]): boolean {
-	let jiamariSegments = 0;
 	for (let index = 0; index < moraPattern.length; index++) {
 		const diff = moraPattern[index] - TARGET_MORA[index];
 		if (diff === 0) {
@@ -149,15 +140,13 @@ function isAllowedMoraPattern(moraPattern: number[]): boolean {
 		if (diff < 0 || diff > MAX_JIAMARI_PER_SEGMENT) {
 			return false;
 		}
-		jiamariSegments++;
 	}
 
-	return jiamariSegments <= MAX_JIAMARI_SEGMENTS;
+	return true;
 }
 
-function isIncompleteNonFinalSegmentEnd(token: MoraToken): boolean {
+function isIncompleteSegmentEnd(token: MoraToken): boolean {
 	const majorPartOfSpeech = token.partOfSpeech[0] ?? "";
-	const subPartOfSpeech = token.partOfSpeech[1] ?? "";
 	const conjugationForm = token.partOfSpeech[5] ?? "";
 	const isIncompleteForm = /未然形|連用形/.test(conjugationForm);
 
@@ -165,11 +154,30 @@ function isIncompleteNonFinalSegmentEnd(token: MoraToken): boolean {
 		return true;
 	}
 
-	return (
-		majorPartOfSpeech === "動詞" &&
-		subPartOfSpeech === "非自立可能" &&
-		isIncompleteForm
-	);
+	return majorPartOfSpeech === "動詞" && isIncompleteForm;
+}
+
+function isIncompleteSegmentEndWithNext(
+	token: MoraToken,
+	nextToken: MoraToken | undefined,
+): boolean {
+	if (!isIncompleteSegmentEnd(token)) {
+		return false;
+	}
+
+	if (token.partOfSpeech[0] === "動詞") {
+		if (!nextToken) {
+			return false;
+		}
+		const nextMajorPartOfSpeech = nextToken.partOfSpeech[0] ?? "";
+		return ["助詞", "助動詞"].includes(nextMajorPartOfSpeech);
+	}
+
+	if (!nextToken) {
+		return false;
+	}
+
+	return true;
 }
 
 function isInvalidSegmentStart(token: MoraToken): boolean {
@@ -177,13 +185,38 @@ function isInvalidSegmentStart(token: MoraToken): boolean {
 	return ["助詞", "助動詞", "接尾辞"].includes(majorPartOfSpeech);
 }
 
+function isInvalidCandidateStart(
+	token: MoraToken,
+	nextToken: MoraToken | undefined,
+): boolean {
+	return (
+		isInvalidSegmentStart(token) ||
+		isIncompleteSegmentEndWithNext(token, nextToken)
+	);
+}
+
+function hasAsciiDigitToken(
+	tokens: MoraToken[],
+	start: number,
+	end: number,
+): boolean {
+	return tokens
+		.slice(start, end)
+		.some((token) => /[0-9０-９]/.test(token.surface));
+}
+
 function hasInvalidSegmentBoundary(
 	tokens: MoraToken[],
 	firstEnd: number,
 	secondEnd: number,
+	end: number,
 ): boolean {
 	const firstLastToken = tokens[firstEnd - 1];
 	const secondLastToken = tokens[secondEnd - 1];
+	const thirdLastToken = tokens[end - 1];
+	const firstNextToken = tokens[firstEnd];
+	const secondNextToken = tokens[secondEnd];
+	const thirdNextToken = tokens[end];
 	const secondFirstToken = tokens[firstEnd];
 	const thirdFirstToken = tokens[secondEnd];
 	return (
@@ -191,8 +224,9 @@ function hasInvalidSegmentBoundary(
 		!!secondLastToken &&
 		!!secondFirstToken &&
 		!!thirdFirstToken &&
-		(isIncompleteNonFinalSegmentEnd(firstLastToken) ||
-			isIncompleteNonFinalSegmentEnd(secondLastToken) ||
+		(isIncompleteSegmentEndWithNext(firstLastToken, firstNextToken) ||
+			isIncompleteSegmentEndWithNext(secondLastToken, secondNextToken) ||
+			isIncompleteSegmentEndWithNext(thirdLastToken, thirdNextToken) ||
 			isInvalidSegmentStart(secondFirstToken) ||
 			isInvalidSegmentStart(thirdFirstToken))
 	);
@@ -206,7 +240,10 @@ function findBestSenryuCandidateForWindowRange(
 ): SenryuCandidate | null {
 	let bestCandidate: SenryuCandidate | null = null;
 	const totalMora = sumMora(prefixSums, start, end);
-	if (totalMora < TARGET_TOTAL_MORA || totalMora > TARGET_TOTAL_MORA + 1) {
+	if (totalMora < TARGET_TOTAL_MORA || totalMora > TARGET_TOTAL_MORA + 3) {
+		return null;
+	}
+	if (hasAsciiDigitToken(tokens, start, end)) {
 		return null;
 	}
 
@@ -221,7 +258,7 @@ function findBestSenryuCandidateForWindowRange(
 			if (!isAllowedMoraPattern(moraPattern)) {
 				continue;
 			}
-			if (hasInvalidSegmentBoundary(tokens, firstEnd, secondEnd)) {
+			if (hasInvalidSegmentBoundary(tokens, firstEnd, secondEnd, end)) {
 				continue;
 			}
 
@@ -270,23 +307,32 @@ function isBetterCandidate(
 }
 
 function findBestSenryuCandidate(tokens: MoraToken[]): SenryuCandidate | null {
-	let bestCandidate: SenryuCandidate | null = null;
 	const prefixSums = buildMoraPrefixSums(tokens);
-	const start = 0;
 
-	for (let end = start + 3; end <= tokens.length; end++) {
-		const candidate = findBestSenryuCandidateForWindowRange(
-			tokens,
-			prefixSums,
-			start,
-			end,
-		);
-		if (candidate && isBetterCandidate(candidate, bestCandidate)) {
-			bestCandidate = candidate;
+	for (let start = 0; start <= tokens.length - 3; start++) {
+		if (isInvalidCandidateStart(tokens[start], tokens[start + 1])) {
+			continue;
+		}
+
+		let bestCandidateForStart: SenryuCandidate | null = null;
+		for (let end = start + 3; end <= tokens.length; end++) {
+			const candidate = findBestSenryuCandidateForWindowRange(
+				tokens,
+				prefixSums,
+				start,
+				end,
+			);
+			if (candidate && isBetterCandidate(candidate, bestCandidateForStart)) {
+				bestCandidateForStart = candidate;
+			}
+		}
+
+		if (bestCandidateForStart) {
+			return bestCandidateForStart;
 		}
 	}
 
-	return bestCandidate;
+	return null;
 }
 
 function findExactSenryuCandidate(tokens: MoraToken[]): SenryuCandidate | null {
@@ -324,9 +370,9 @@ function buildFailureReason(tokens: MoraToken[], exact: boolean): string {
 	const totalMora = tokens.reduce((total, token) => total + token.mora, 0);
 	if (
 		exact &&
-		(totalMora < TARGET_TOTAL_MORA || totalMora > TARGET_TOTAL_MORA + 1)
+		(totalMora < TARGET_TOTAL_MORA || totalMora > TARGET_TOTAL_MORA + 3)
 	) {
-		return `入力全体のモーラ数が ${totalMora} で、川柳の 17 モーラまたは一か所だけ字余りの 18 モーラではありません。`;
+		return `入力全体のモーラ数が ${totalMora} で、川柳の 17 モーラまたは各句 +1 までの字余り範囲ではありません。`;
 	}
 	if (exact && !hasExactMoraPattern(tokens)) {
 		return "入力全体を 5・7・5 の区切りに分割できません。";
