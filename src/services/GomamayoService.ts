@@ -1,5 +1,5 @@
 import { type Morpheme, MorphologyService } from "./MorphologyService";
-import { isHiragana, katakanaToHiragana } from "../utils/kana";
+import { isAscii, isHiragana, katakanaToHiragana } from "../utils/kana";
 
 type GomamayoKind = "none" | "gomamayo" | "high-order" | "n-term";
 
@@ -60,14 +60,14 @@ export class GomamayoService {
 			}
 
 			for (
-				let j = 0;
-				j <
-				Math.min(current.pronunciation.length, next.pronunciation.length) - 1;
-				j += 1
+				let overlapLength = 2;
+				overlapLength <=
+				Math.min(current.pronunciation.length, next.pronunciation.length);
+				overlapLength += 1
 			) {
 				if (
-					current.pronunciation.slice(-2 - j, -1) ===
-					next.pronunciation.slice(0, j + 1)
+					current.pronunciation.slice(-overlapLength) ===
+					next.pronunciation.slice(0, overlapLength)
 				) {
 					message = "高次ゴママヨです。";
 					kind = "high-order";
@@ -119,6 +119,7 @@ export class GomamayoService {
 			majorPartOfSpeech === "空白" ||
 			majorPartOfSpeech === "記号" ||
 			majorPartOfSpeech === "補助記号" ||
+			isAscii(token.surface) ||
 			this.isRepeatedInterjection(token) ||
 			EMOJI_PATTERN.test(token.surface)
 		);

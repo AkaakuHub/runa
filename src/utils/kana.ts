@@ -33,6 +33,12 @@ export const hasJapanese = (text: string): boolean => {
 	return JAPANESE_PATTERN.test(text);
 };
 
+export const isAscii = (text: string): boolean => {
+	return (
+		text.length > 0 && [...text].every((char) => char.charCodeAt(0) <= 0x7f)
+	);
+};
+
 export const isKana = (text: string): boolean => {
 	return KANA_PATTERN.test(text);
 };
