@@ -27,11 +27,14 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	);
 
 	// ボットのメッセージは無視
-	// ではなくて、このbot自身だけを無視する
-	if (message.author.id === config.clientId) {
-		logDebug("messageCreate: このbot自身のメッセージなので無視します");
+	if (message.author.bot) {
 		return;
 	}
+	// ではなくて、このbot自身だけを無視する
+	// if (message.author.id === config.clientId) {
+	// 	logDebug("messageCreate: このbot自身のメッセージなので無視します");
+	// 	return;
+	// }
 
 	// TTS機能の処理
 	await handleTTS(message);
