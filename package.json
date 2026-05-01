@@ -25,6 +25,7 @@
   "dependencies": {
     "@discordjs/opus": "^0.10.0",
     "@discordjs/voice": "^0.19.0",
+    "@google/genai": "^1.51.0",
     "@huggingface/transformers": "^3.8.1",
     "@snazzah/davey": "^0.1.10",
     "@types/d3": "^7.4.3",
@@ -35,7 +36,6 @@
     "discord.js": "^14.25.1",
     "dotenv": "^17.3.1",
     "ffmpeg-static": "^5.3.0",
-    "groq-sdk": "^0.37.0",
     "jsdom": "^28.1.0",
     "libsodium-wrappers": "^0.8.2",
     "node-cron": "^4.2.1",
