@@ -7,61 +7,17 @@ import type { SenryuDetectionResult } from "./senryuDetector";
 
 const execFileAsync = promisify(execFile);
 const brushFontFamily = "KouzanMouhituFont10";
+const imageFontSize = 64;
+const imageHorizontalPadding = 36;
+const imageHeight = 112;
 let brushFontInstalledPromise: Promise<void> | null = null;
 
-const sagePrefixes = [
-	"ほっほっほ、五七五の気配、わしにはしかと見えたぞい。",
-	"ふむ、これは川柳じゃな。そなたの言の葉、なかなか味わい深いぞ。",
-	"ほう、風流な響きじゃ。わしが巻物にしたためておいたぞい。",
-];
-
-const rotatedVerticalChars = new Set([
-	"ー",
-	"ｰ",
-	"-",
-	"‐",
-	"‑",
-	"‒",
-	"–",
-	"—",
-	"―",
-	"−",
-	"～",
-	"〜",
-]);
-
-function toVerticalChars(text: string): string[] {
-	return Array.from(
-		text
-			.replace(/\.{3}/g, "︙")
-			.replace(/\.{2}/g, "︰")
-			.replace(/…/g, "︙")
-			.replace(/‥/g, "︰"),
-	);
+function formatSenryuText(result: SenryuDetectionResult): string {
+	return result.segments.join("　");
 }
 
-function pickSagePrefix(seed: string): string {
-	let total = 0;
-	for (const char of seed) {
-		total += char.charCodeAt(0);
-	}
-	return sagePrefixes[total % sagePrefixes.length];
-}
-
-export function buildSenryuReply(
-	result: SenryuDetectionResult,
-	messageAuthorName: string,
-): string {
-	const quoted = result.segments.map((segment) => `　${segment}`).join("\n");
-
-	return `${pickSagePrefix(result.reading)}
-${messageAuthorName}殿、そなたの句をしかと拝見したぞ。
-
-「
-${quoted}
-」
-
-この響き、しばし庵に飾っておくとしよう。`;
+export function buildSenryuReply(result: SenryuDetectionResult): string {
+	return `ふむ、これは川柳じゃな。「${formatSenryuText(result)}」`;
 }
 
 function createPaperTexture(
@@ -109,48 +65,19 @@ function createPaperTexture(
 		.append("rect")
 		.attr("width", width)
 		.attr("height", height)
-		.attr("rx", 18)
+		.attr("rx", 12)
 		.attr("fill", "url(#paper-gradient)");
 
 	svg
 		.append("rect")
 		.attr("width", width)
 		.attr("height", height)
-		.attr("rx", 18)
+		.attr("rx", 12)
 		.attr("filter", "url(#paper-noise)")
 		.attr("opacity", 0.9);
 }
 
-function appendVerticalText(
-	svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
-	text: string,
-	x: number,
-	startY: number,
-	fontSize: number,
-	fill: string,
-	letterSpacing: number,
-): void {
-	const chars = toVerticalChars(text);
-	chars.forEach((char, index) => {
-		const y = startY + index * letterSpacing;
-		const textElement = svg
-			.append("text")
-			.attr("x", x)
-			.attr("y", y)
-			.attr("font-family", brushFontFamily)
-			.attr("font-size", fontSize)
-			.attr("text-anchor", "middle")
-			.attr("dominant-baseline", "central")
-			.attr("fill", fill)
-			.text(char);
-
-		if (rotatedVerticalChars.has(char)) {
-			textElement.attr("transform", `rotate(90 ${x} ${y})`);
-		}
-	});
-}
-
-function appendSealText(
+function appendHorizontalText(
 	svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
 	text: string,
 	x: number,
@@ -158,51 +85,35 @@ function appendSealText(
 	fontSize: number,
 	fill: string,
 ): void {
-	const chars = toVerticalChars(text);
-	const letterSpacing = fontSize + 2;
-	const startY = y - ((chars.length - 1) * letterSpacing) / 2;
+	svg
+		.append("text")
+		.attr("x", x)
+		.attr("y", y)
+		.attr("font-family", brushFontFamily)
+		.attr("font-size", fontSize)
+		.attr("text-anchor", "middle")
+		.attr("dominant-baseline", "central")
+		.attr("fill", fill)
+		.text(text);
+}
 
-	chars.forEach((char, index) => {
-		const charY = startY + index * letterSpacing;
-		const textElement = svg
-			.append("text")
-			.attr("x", x)
-			.attr("y", charY)
-			.attr("font-family", brushFontFamily)
-			.attr("font-size", fontSize)
-			.attr("text-anchor", "middle")
-			.attr("dominant-baseline", "central")
-			.attr("fill", fill)
-			.text(char);
-
-		if (rotatedVerticalChars.has(char)) {
-			textElement.attr("transform", `rotate(90 ${x} ${charY})`);
+function estimateTextUnits(text: string): number {
+	return Array.from(text).reduce((total, char) => {
+		if (/[\x20-\x7e]/.test(char)) {
+			return total + 0.55;
 		}
-	});
+
+		if (char === "　") {
+			return total + 0.75;
+		}
+
+		return total + 1;
+	}, 0);
 }
 
-function formatPoetName(poetName: string): string {
-	const normalized = poetName.replace(/\s+/g, "").trim();
-	if (!normalized) {
-		return "名無し";
-	}
-
-	const chars = Array.from(normalized);
-	return chars.length > 24 ? `${chars.slice(0, 23).join("")}…` : normalized;
-}
-
-function appendPoetName(
-	svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
-	poetName: string,
-	x: number,
-	bottomY: number,
-): void {
-	const fontSize = 38;
-	const letterSpacing = 45;
-	const text = formatPoetName(poetName);
-	const startY = bottomY - (Array.from(text).length - 1) * letterSpacing;
-
-	appendVerticalText(svg, text, x, startY, fontSize, "#4d3a27", letterSpacing);
+function calculateImageWidth(text: string): number {
+	const textWidth = Math.ceil(estimateTextUnits(text) * imageFontSize);
+	return Math.max(520, textWidth + imageHorizontalPadding * 2);
 }
 
 async function assertBrushFontInstalled(): Promise<void> {
@@ -225,12 +136,12 @@ async function assertBrushFontInstalledOnce(): Promise<void> {
 
 export async function generateSenryuImage(
 	result: SenryuDetectionResult,
-	poetName: string,
 ): Promise<Buffer> {
 	await assertBrushFontInstalled();
 
-	const width = 900;
-	const height = 1400;
+	const senryuText = formatSenryuText(result);
+	const width = calculateImageWidth(senryuText);
+	const height = imageHeight;
 	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
 
 	const svg = d3
@@ -243,47 +154,13 @@ export async function generateSenryuImage(
 
 	createPaperTexture(svg, width, height);
 
-	svg
-		.append("rect")
-		.attr("x", 38)
-		.attr("y", 38)
-		.attr("width", width - 76)
-		.attr("height", height - 76)
-		.attr("rx", 12)
-		.attr("fill", "none")
-		.attr("stroke", "#9c6f3a")
-		.attr("stroke-width", 3)
-		.attr("opacity", 0.65);
-
-	appendVerticalText(svg, "川柳発見", width - 92, 130, 34, "#5b2e12", 44);
-
-	const columnXs = [610, 450, 290];
-	result.segments.forEach((segment, index) => {
-		appendVerticalText(svg, segment, columnXs[index], 240, 90, "#16110d", 96);
-	});
-
-	const sealSize = 72;
-	const sealX = 96;
-	const sealY = height - 200;
-	appendPoetName(svg, poetName, sealX + sealSize / 2, sealY - 36);
-
-	svg
-		.append("rect")
-		.attr("x", sealX)
-		.attr("y", sealY)
-		.attr("width", sealSize)
-		.attr("height", sealSize)
-		.attr("rx", 8)
-		.attr("fill", "#a11d1d")
-		.attr("opacity", 0.92);
-
-	appendSealText(
+	appendHorizontalText(
 		svg,
-		"仙人",
-		sealX + sealSize / 2,
-		sealY + sealSize / 2,
-		25,
-		"#fff4ea",
+		senryuText,
+		width / 2,
+		height / 2,
+		imageFontSize,
+		"#16110d",
 	);
 
 	const svgContent = dom.window.document.body.innerHTML;

@@ -5,7 +5,6 @@ import {
 	type Message,
 	type VoiceChannel,
 } from "discord.js";
-import { config } from "../config/config";
 import { handleGomamayoResponse } from "../response/Gomamayo";
 import { IyaResponse } from "../response/Iya";
 import { MusicService } from "../services/MusicService";
@@ -42,11 +41,9 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	const senryu = await detectSenryu(message.content);
 	if (senryu) {
 		logInfo(`川柳を検知しました: author=${message.author.username}`);
-		const messageAuthorName =
-			message.member?.displayName ?? message.author.username;
-		const replyContent = buildSenryuReply(senryu, messageAuthorName);
+		const replyContent = buildSenryuReply(senryu);
 		try {
-			const imageBuffer = await generateSenryuImage(senryu, messageAuthorName);
+			const imageBuffer = await generateSenryuImage(senryu);
 			const attachment = new AttachmentBuilder(imageBuffer, {
 				name: "senryu-washi.png",
 			});
