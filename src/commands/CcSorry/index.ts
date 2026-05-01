@@ -11,7 +11,7 @@ import { getCurrentJSTDate, getLocalDateString } from "../../utils/dateUtils";
 import { logError } from "../../utils/logger";
 import { generateAiText } from "../../utils/useAI";
 
-const CC_SORRY_COOLDOWN_MS = 5 * 60 * 1000;
+const CC_SORRY_COOLDOWN_MS = 0;
 
 // Geminiを使って反省文を株式会社Anthropicの謝罪文に整形
 const formatApologyText = async (originalText: string): Promise<string> => {

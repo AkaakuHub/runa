@@ -77,7 +77,7 @@ const MAX_INPUT_TOKENS =
 const EMPTY_RESPONSE_RETRY_DELAY_MS = 60 * 1000;
 const EMPTY_RESPONSE_MAX_RETRIES = 3;
 const LENGTH_FINISH_MAX_RETRIES = 2;
-const DAILY_SUMMARY_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const DAILY_SUMMARY_COOLDOWN_MS = 0;
 
 const DAY_OF_WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
 

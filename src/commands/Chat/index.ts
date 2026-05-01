@@ -5,7 +5,7 @@ import { logError } from "../../utils/logger";
 import { editAndFollowUpLongMessage } from "../../utils/messageUtils";
 import { chatWithAssistant } from "../../utils/useAI";
 
-const CHAT_COOLDOWN_MS = 5 * 60 * 1000;
+const CHAT_COOLDOWN_MS = 0;
 
 export const ChatCommand: CommandDefinition = {
 	name: "chat",
