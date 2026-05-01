@@ -17,7 +17,7 @@ function formatSenryuText(result: SenryuDetectionResult): string {
 }
 
 export function buildSenryuReply(result: SenryuDetectionResult): string {
-	return `ふむ、これは川柳じゃな。「${formatSenryuText(result)}」`;
+	return `ふむ、これは川柳じゃな。\n「${formatSenryuText(result)}」`;
 }
 
 function createPaperTexture(
