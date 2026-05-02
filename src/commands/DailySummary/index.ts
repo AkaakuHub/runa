@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 import { dailyChannelService } from "../../services/DailyChannelService";
 import type { CommandDefinition } from "../../types";
+import { checkCommandCooldown } from "../../utils/commandCooldown";
 import {
 	formatToDetailedJapaneseDate,
 	getCurrentJSTDateRange,
@@ -21,11 +22,9 @@ import {
 	sendLongMessage,
 } from "../../utils/messageUtils";
 import {
-	estimateTokensGptOss20bFromText,
-	warmupTokenEstimator,
-} from "../../utils/tokenEstimator";
-import { checkCommandCooldown } from "../../utils/commandCooldown";
-import { generateAiTextWithUsage } from "../../utils/useAI";
+	estimateAiTextTokens,
+	generateAiTextWithUsage,
+} from "../../utils/useAI";
 
 // Twitter/X URL検出とコンテンツ取得のヘルパー関数
 function extractTwitterUrls(content: string): string[] {
@@ -68,10 +67,10 @@ async function fetchTweetContent(twitterUrl: string): Promise<string | null> {
 	}
 }
 
-const MAX_TOTAL_TOKENS = 8000;
-const RESERVED_OUTPUT_TOKENS = 2200;
-const PROMPT_SAFETY_BUFFER_TOKENS = 900;
-const MAX_CHUNK_OUTPUT_TOKENS = 1000;
+const MAX_TOTAL_TOKENS = 64000;
+const RESERVED_OUTPUT_TOKENS = 1500;
+const PROMPT_SAFETY_BUFFER_TOKENS = 2500;
+const MAX_CHUNK_OUTPUT_TOKENS = 650;
 const MAX_INPUT_TOKENS =
 	MAX_TOTAL_TOKENS - RESERVED_OUTPUT_TOKENS - PROMPT_SAFETY_BUFFER_TOKENS;
 const EMPTY_RESPONSE_RETRY_DELAY_MS = 60 * 1000;
@@ -80,6 +79,132 @@ const LENGTH_FINISH_MAX_RETRIES = 2;
 const DAILY_SUMMARY_COOLDOWN_MS = 0;
 
 const DAY_OF_WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
+
+interface DailyMessageForSummary {
+	channel: string;
+	author: string;
+	content: string;
+	timestamp: Date;
+	messageId: string;
+	channelId: string;
+	guildId: string;
+}
+
+interface DailySummarySignal {
+	score: number;
+	label: string;
+	messageCount: number;
+	participantCount: number;
+	activeHourCount: number;
+	sentimentScore: number;
+	jitter: number;
+}
+
+function getHareKeLabel(score: number): string {
+	if (score >= 90) return "超ハレ";
+	if (score >= 80) return "ハレ";
+	if (score >= 70) return "ややハレ";
+	if (score >= 60) return "超ケ";
+	if (score >= 50) return "ケ";
+	if (score >= 40) return "ややケ";
+	if (score >= 30) return "超ネ";
+	if (score >= 20) return "ネ";
+	if (score >= 10) return "ややネ";
+	return "欺瞞";
+}
+
+function stableHash(text: string): number {
+	let hash = 2166136261;
+	for (let i = 0; i < text.length; i += 1) {
+		hash ^= text.charCodeAt(i);
+		hash = Math.imul(hash, 16777619);
+	}
+	return hash >>> 0;
+}
+
+function avoidRoundScore(score: number, hash: number): number {
+	if (score <= 0 || score >= 100) return score;
+	if (score % 10 !== 0 && score % 5 !== 0) return score;
+
+	const offset = (hash % 5) - 2 || 3;
+	return Math.max(1, Math.min(99, score + offset));
+}
+
+function buildDailySummarySignal(
+	messages: DailyMessageForSummary[],
+	dateInfo: {
+		month: number;
+		day: number;
+		dayOfWeek: number;
+		isMonthStart: boolean;
+		isMonthEnd: boolean;
+	},
+): DailySummarySignal {
+	const authors = new Set(messages.map((message) => message.author));
+	const activeHours = new Set(
+		messages.map((message) => message.timestamp.getHours()),
+	);
+	const allText = messages.map((message) => message.content).join("\n");
+	const positiveMatches =
+		allText.match(
+			/(草|笑|嬉|良|最高|助か|神|うま|好き|ありがと|成功|勝|楽し|かわい|すご|えら)/g,
+		)?.length ?? 0;
+	const negativeMatches =
+		allText.match(
+			/(無理|つら|辛|悲|失敗|死|嫌|最悪|だる|疲|怖|バグ|壊|遅|泣|終わ|カス)/g,
+		)?.length ?? 0;
+	const surpriseMatches =
+		allText.match(/[!?！？]|(やば|まじ|！？|事件|急|突然)/g)?.length ?? 0;
+	const seed = `${dateInfo.month}-${dateInfo.day}-${messages.length}-${Array.from(authors).join(",")}-${allText.slice(0, 500)}`;
+	const hash = stableHash(seed);
+	const jitter = (hash % 35) - 17;
+	const activityScore = Math.min(
+		22,
+		Math.round(Math.log2(messages.length + 1) * 4),
+	);
+	const participantScore = Math.min(12, authors.size * 3);
+	const hourScore = Math.min(8, activeHours.size);
+	const sentimentScore = Math.max(
+		-20,
+		Math.min(
+			20,
+			(positiveMatches - negativeMatches) * 3 + Math.min(8, surpriseMatches),
+		),
+	);
+	const calendarScore =
+		(dateInfo.dayOfWeek === 0 || dateInfo.dayOfWeek === 6 ? 4 : 0) +
+		(dateInfo.isMonthStart ? 3 : 0) -
+		(dateInfo.isMonthEnd ? 2 : 0);
+	const rawScore =
+		43 +
+		activityScore +
+		participantScore +
+		hourScore +
+		sentimentScore +
+		calendarScore +
+		jitter;
+	const score = avoidRoundScore(Math.max(0, Math.min(100, rawScore)), hash);
+
+	return {
+		score,
+		label: getHareKeLabel(score),
+		messageCount: messages.length,
+		participantCount: authors.size,
+		activeHourCount: activeHours.size,
+		sentimentScore,
+		jitter,
+	};
+}
+
+function normalizeSummaryJudgment(
+	summary: string,
+	signal: DailySummarySignal,
+): string {
+	return summary.replace(
+		/###\s*今日は『[^』]+』の日でした！\(\d+%\)/,
+		`### 今日は『${signal.label}』の日でした！(${signal.score}%)`,
+	);
+}
 
 function buildDateInfoSection(dateInfo: {
 	month: number;
@@ -104,6 +229,7 @@ function buildFinalSummaryPrompt(
 		isMonthEnd: boolean;
 	},
 	sourceKind: "raw_messages" | "chunk_digests",
+	signal: DailySummarySignal,
 	highlight?: string | null,
 ): string {
 	const sourceLabel =
@@ -111,15 +237,20 @@ function buildFinalSummaryPrompt(
 			? "【今日のメッセージ】（時刻とURL付き）"
 			: "【チャンク要約】（時刻・URL付きの証拠ベース）";
 
-	let prompt = `あなたはプロの新聞記者兼占い師。与えられた情報だけで、1日分のニュースとハレ・ケ判定を作成してください。
-個人の発言・ユーザー間会話を最優先し、小ネタも取りこぼさず拾ってください。X/Twitter情報は補助扱いです。
+	let prompt = `あなたは事実確認に厳しいプロの新聞記者兼占い師。与えられた情報だけで、1日分の短いサーバーニュースとハレ・ケ判定を作成してください。
+個人の発言・ユーザー間会話を最優先してください。X/Twitter情報は補助扱いです。
 推測や創作は禁止。不要な前置き（例:「承知しました」）は出力しないでください。
-語り口はテンション高めのニュースレポート調。感情の揺れ、意外性、軽いユーモアを必ず入れてください。
+語り口は新聞記事風。短く、具体的で、読みやすく、少しユーモアのある内容を優先してください。
 
 ${sourceLabel}：
 ${sourceText}
 
 ${buildDateInfoSection(dateInfo)}
+
+【今日のハレ・ケ推奨値】
+- 判定: ${signal.label} (${signal.score}%)
+- 根拠信号: メッセージ${signal.messageCount}件、参加者${signal.participantCount}人、活動時間帯${signal.activeHourCount}時間、感情差分${signal.sentimentScore}、日替わり揺らぎ${signal.jitter}
+- 先頭見出しは必ずこの判定名とパーセントを使うこと。キリのいい数字へ丸めないこと。
 
 【ハレ・ケ判定の基準】
 - 活動：メッセージ数、参加者数、時間帯の分散度
@@ -128,27 +259,44 @@ ${buildDateInfoSection(dateInfo)}
 - 自然：曜日の特性、季節感
 - 運命：総合的な運勢の流れ
 
+【新聞記者としての書き方】
+- 各記事は逆三角形で書く。1文目に「誰が/何が/どうした/なぜ面白いか」の核心を置き、2文目は補足か余韻にする
+- 5W1Hのうち、根拠メッセージから確認できる要素だけを書く。確認できない「なぜ」「目的」「感情」は書かない
+- 見出しは100字未満。具体名・出来事・意外性のどれかを入れる。抽象語だけの見出しは禁止
+- 1記事1テーマ。複数の小話を無理に圧縮せず、重要でない要素は捨てる
+- 文章は短い段落で、1文1情報。受け身より「誰が何をした」が分かる能動文を優先する
+- 引用は短く、発言の味が出るものだけ使う。引用の意味を変えない。曖昧な引用は使わず要約する
+- ユーモアは見出しや比喩の軽さに限定する。事実を盛る、本人が言っていない感情を足す、架空のオチを作ることは禁止
+
+【ハルシネーション防止の絶対ルール】
+- Discord URLで裏付けられる事実だけを書く
+- URL先の発言者・時刻・内容と矛盾することを書かない
+- 会話にない固有名詞、場所、人数、金額、原因、結末を追加しない
+- 「〜したようだ」「〜らしい」でも、根拠がない推測なら書かない
+- 不明なことは不明なままにし、断定しない
+- X/Twitter取得内容は投稿本文として扱い、Discord参加者自身の体験のように書かない
+- 面白くするために誇張する場合も、元発言の範囲を超えない
+
 【注意事項】
 - 各トピックは必ず「🔸 **」から始める
 - 時刻は HH:MM 形式、URLは正確なDiscordメッセージリンクのみ使用
 - 個人のメッセージや会話を優先的に取り上げる
-- 小さな話題でも見逃さずに取り上げる
-- 15個のトピックを必ず作成する
-- 可能な範囲で時間帯が偏らないようにすること
+- ニュース価値が低い相槌、単なるURL共有、短い反応、状況説明だけの発言は減らす
+- 面白い展開、意外な失敗、会話の転がり、具体的な発見がある話題を優先する
+- トピックは5〜7個。内容が薄い日は3〜5個でもよい
+- 可能な範囲で時間帯が偏らないようにすること。ただし面白さを最優先する
 - ハレ・ケ判定の区分は、会話内容に大きく左右される
 - 以下の出力形式を100%、本当に絶対に厳守
-- パーセンテージも、毎日、実際の会話内容によって、0%から100%の間で、1刻みで変動させる。固定値にしないこと。キリのいい数字でなくて全然構わないので、当日の内容を正確に反映させること。
 - 各トピックは必ずDiscord URLを1件含める
 - URL行は必ず単独行で「https://discord.com/channels/...」のみを書く（「URL:」や補足説明を付けない）
 - 絵文字と見出し記号はテンプレートと完全一致（「🔸」「🔮」を変更しない）
-- トピック本文は自然なニュース文体で2〜4文にする（ラベル形式の「会話抜粋:」「要約内容:」は禁止）
+- トピック本文は自然な新聞記事文体で1〜2文、160字以内にする（ラベル形式の「会話抜粋:」「要点:」は禁止）
 - 会話内容は本文へ自然に織り込み、必要なら短い引用「...」として入れる
 - 見出しは自然な記事タイトルにする（例: 「みみちゃん、ウニにやられる？」）
 - 「トピック1」「話題A」「会話まとめ」などの機械的タイトルは禁止
-- 文体は「感情的で、おもしろおかしいニュース・レポート調」を維持する
-- 各トピック本文は「導入 -> 展開 -> 余韻」の流れで書き、場の空気（ざわつき、笑い、困惑、安心）を必ず入れる
+- 文体は「短くて読みやすい新聞記事調」を維持する
 - 乾いた事務要約は禁止（例: 「価格設定」「反応で好評」「コストパフォーマンス」だけで終える文）
-- 禁止: 2文以下の短い断片要約、名詞中心の説明文、SNS要約のような無感情な文体
+- 禁止: 名詞中心の説明文、SNS要約のような無感情な文体、全発言を均等に拾うだけの羅列
 - 禁止語調: 「中立的」「収束した」「個人差で終わる」など、温度を下げる締め方
 
 【ハレ・ケ判定の区分】
@@ -172,32 +320,28 @@ etc.
 
 ### 今日は『(ここに今回の【ハレ・ケ判定の区分】を１つ入れる)』の日でした！((ここに今回の〇〇%を入れる))
 ┌─ 判定理由 ─────────────────┐
-│ 💬 活動: 分析結果をここに記入                    │
-│ 😊 感情: 分析結果をここに記入                    │
-│ 📅 伝統: 分析結果をここに記入                    │
-│ 🌤️ 自然: 分析結果をここに記入                    │
-│ ✨ 運命: 分析結果をここに記入                    │
+│ 💬 活動: 25字以内で記入                         │
+│ 😊 感情: 25字以内で記入                         │
+│ 📅 伝統: 25字以内で記入                         │
+│ 🌤️ 自然: 25字以内で記入                         │
+│ ✨ 運命: 25字以内で記入                         │
 └──────────────────────────┘
 
 📰 **今日のサーバーニュース**
 
 🔸 **深夜の乾杯、議論は予想外の方向へ** - 10:01
 https://discord.com/channels/...
-某所の飲み会がもんじゃで3500円という情報に、ある参加者が「酒なしでピンチケもんじゃはしゃばい」と猛反発！ストライキも辞さない構え！？最終的に別店舗に変更されるか、議論が白熱。
+飲み会の店選びで「酒なしでピンチケもんじゃはしゃばい」と異議が出た。値段そのものより、内容への納得感が争点になったのがこの日の小さな山場だ。
 
 🔸 **増設チャレンジ、気合いで逆転起動** - 16:20
 https://discord.com/channels/...
-あるメンバーがメモリ増設に挑戦！最初は動かなかったものの、気合いを入れたら動いたとのこと。DDR5の増設は難しいと聞きますが、気合いで乗り切ったようです。
-
-🔸 **夜の移動で緊急停止、到着は未定** - 21:10
-https://discord.com/channels/...
-メンバーAが路線電車に乗車中、電車が故障し立ち往生！到着時間不明という事態に。果たして無事に目的地にたどり着けるのか？
+メモリ増設は一度うまくいかなかったが、最終的に起動した。技術作業のはずが、最後は少しだけ根性論の顔を見せた。
 
 （悪い例・この文体は禁止）
 - 「1人3000円で飲んで」と価格設定。
 - 「安いな」反応でコストパフォーマンスが好評。
 
-（以下同様に合計15個のトピックを続ける）
+（以下同様に、選び抜いたトピックだけを続ける）
 
 🔮 **明日への一言**
 今日の分析を踏まえた明日へのアドバイスやメッセージ
@@ -228,7 +372,7 @@ function buildChunkDigestPrompt(
 	highlight?: string | null,
 ): string {
 	let prompt = `あなたはプロの新聞記者です。以下は1日分メッセージの一部（全${totalChunks}分割中 ${chunkIndex + 1}番目）です。
-このチャンクだけを根拠に、会話中心の要点メモを作ってください。創作や推測は禁止です。
+このチャンクだけを根拠に、会話中心の取材メモを作ってください。創作や推測は禁止です。
 
 ${buildDateInfoSection(dateInfo)}
 
@@ -239,13 +383,18 @@ ${messageLines}
 ${seenUrls.length > 0 ? seenUrls.join("\n") : "なし"}
 
 【チャンク出力形式（厳守）】
-- 最大5件、最小1件（有効題材がなければ「（このチャンクで新規トピックなし）」）
+- 最大3件、最小1件（有効題材がなければ「（このチャンクで新規トピックなし）」）
 - 各件は必ず次の4行:
   1) - [HH:MM] 見出し
   2)   https://discord.com/channels/...
   3)   会話抜粋: 「...」
-  4)   要点: 1〜2文
+  4)   要点: 確認できる事実と面白さが分かる1文
 - 個人会話・やり取りを優先する
+- 相槌、単なるURL共有、短い反応、説明だけで展開のない話は落とす
+- 最終ニュースに残したい順で並べる
+- 根拠メッセージにない固有名詞、原因、結末、感情、人数、金額は追加しない
+- ユーモアのために事実を盛らない。面白さは、実際の発言や展開から拾う
+- X/Twitter取得内容は外部投稿として扱い、Discord参加者自身の体験に変換しない
 - URLは「URL:」等の接頭辞を付けず、単独行のDiscord URLだけにする
 `;
 
@@ -266,7 +415,7 @@ async function splitMessagesByEstimatedTokens(
 	let currentTokens = basePromptTokens;
 
 	for (const line of lines) {
-		const lineTokens = await estimateTokensGptOss20bFromText(line);
+		const lineTokens = await estimateAiTextTokens(line);
 		const lineWithSeparatorTokens = lineTokens + 2;
 
 		if (
@@ -333,7 +482,7 @@ async function generateNonEmptyTextWithRetry(
 		attempt += 1;
 		const result = await generateAiTextWithUsage(prompt, {
 			maxCompletionTokens: completionBudget,
-			reasoningEffort: "low",
+			reasoningEffort: "none",
 			temperature,
 		});
 		const normalized = result.text?.trim();
@@ -644,15 +793,7 @@ export async function generateDailySummary(
 			channelIds = configuredChannelIds;
 		}
 
-		const todaysMessages: Array<{
-			channel: string;
-			author: string;
-			content: string;
-			timestamp: Date;
-			messageId: string;
-			channelId: string;
-			guildId: string;
-		}> = [];
+		const todaysMessages: DailyMessageForSummary[] = [];
 
 		for (const channelId of channelIds) {
 			try {
@@ -788,16 +929,17 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 			isMonthStart: targetDateForAnalysis.getDate() === 1,
 			isMonthEnd: targetDateForAnalysis.getDate() >= 28,
 		};
+		const summarySignal = buildDailySummarySignal(todaysMessages, dateInfo);
 
-		// daily-summary時のみ tokenizer で入力トークンを見積もり、上限を超える場合は分割して統合する
-		await warmupTokenEstimator();
+		// Gemini APIで入力トークンを見積もり、上限を超える場合は分割して統合する
 		const fullPrompt = buildFinalSummaryPrompt(
 			messagesWithMeta,
 			dateInfo,
 			"raw_messages",
+			summarySignal,
 			highlight,
 		);
-		const estimatedTokens = await estimateTokensGptOss20bFromText(fullPrompt);
+		const estimatedTokens = await estimateAiTextTokens(fullPrompt);
 		logInfo(
 			`Daily summary token config - reserved_output: ${RESERVED_OUTPUT_TOKENS}, input_budget: ${MAX_INPUT_TOKENS}, chunk_output: ${MAX_CHUNK_OUTPUT_TOKENS}`,
 		);
@@ -838,8 +980,7 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 				[],
 				highlight,
 			);
-			const chunkPromptBaseTokens =
-				await estimateTokensGptOss20bFromText(chunkPromptBase);
+			const chunkPromptBaseTokens = await estimateAiTextTokens(chunkPromptBase);
 			const chunks = await splitMessagesByEstimatedTokens(
 				messageLines,
 				chunkPromptBaseTokens,
@@ -879,8 +1020,7 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 					highlight,
 				);
 
-				const estimatedChunkTokens =
-					await estimateTokensGptOss20bFromText(chunkPrompt);
+				const estimatedChunkTokens = await estimateAiTextTokens(chunkPrompt);
 				logInfo(
 					`Chunk ${index + 1}/${chunks.length} estimated tokens: ${estimatedChunkTokens}`,
 				);
@@ -924,10 +1064,10 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 				mergedDigestSource,
 				dateInfo,
 				"chunk_digests",
+				summarySignal,
 				highlight,
 			);
-			let mergedPromptTokens =
-				await estimateTokensGptOss20bFromText(mergedPrompt);
+			let mergedPromptTokens = await estimateAiTextTokens(mergedPrompt);
 			logInfo(
 				`Merged digest prompt estimated input tokens: ${mergedPromptTokens}`,
 			);
@@ -944,10 +1084,10 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 					mergedDigestSource,
 					dateInfo,
 					"chunk_digests",
+					summarySignal,
 					highlight,
 				);
-				mergedPromptTokens =
-					await estimateTokensGptOss20bFromText(mergedPrompt);
+				mergedPromptTokens = await estimateAiTextTokens(mergedPrompt);
 			}
 
 			await options?.onProgress?.(
@@ -972,8 +1112,7 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 			);
 		}
 
-		// AIが生成した内容をそのまま返す（ハレ・ケ判定も含まれている）
-		return summary;
+		return normalizeSummaryJudgment(summary, summarySignal);
 	} catch (error) {
 		logError(`Error generating daily summary: ${error}`);
 		throw error;

@@ -20,6 +20,7 @@ interface GenerateTextOptions {
 interface AiUsage {
 	prompt_tokens?: number;
 	completion_tokens?: number;
+	thoughts_tokens?: number;
 	total_tokens?: number;
 }
 
@@ -139,13 +140,33 @@ class AiClient {
 			config: {
 				maxOutputTokens: options?.maxCompletionTokens,
 				temperature: options?.temperature,
-				thinkingConfig: thinkingLevel
-					? {
-							thinkingLevel,
-						}
-					: undefined,
+				thinkingConfig:
+					options?.reasoningEffort === "none"
+						? {
+								thinkingBudget: 0,
+							}
+						: thinkingLevel
+							? {
+									thinkingLevel,
+								}
+							: undefined,
 			},
 		});
+	}
+
+	async estimateTextTokens(text: string): Promise<number> {
+		const response = await this.client.models.countTokens({
+			model: this.config.defaultModel,
+			contents: text,
+		});
+
+		if (typeof response.totalTokens !== "number") {
+			throw new Error(
+				`Gemini token count unavailable for ${this.config.defaultModel}`,
+			);
+		}
+
+		return response.totalTokens;
 	}
 
 	/**
@@ -181,6 +202,7 @@ class AiClient {
 					? {
 							prompt_tokens: response.usageMetadata.promptTokenCount,
 							completion_tokens: response.usageMetadata.candidatesTokenCount,
+							thoughts_tokens: response.usageMetadata.thoughtsTokenCount,
 							total_tokens: response.usageMetadata.totalTokenCount,
 						}
 					: undefined;
@@ -191,7 +213,7 @@ class AiClient {
 
 				if (usage) {
 					logInfo(
-						`Gemini usage (${this.config.defaultModel}) - prompt: ${usage.prompt_tokens}, completion: ${usage.completion_tokens}, total: ${usage.total_tokens}`,
+						`Gemini usage (${this.config.defaultModel}) - prompt: ${usage.prompt_tokens}, completion: ${usage.completion_tokens}, thoughts: ${usage.thoughts_tokens ?? 0}, total: ${usage.total_tokens}`,
 					);
 				}
 				if (!text.trim()) {
@@ -251,6 +273,9 @@ export const generateAiTextWithUsage = (
 	prompt: string,
 	options?: GenerateTextOptions,
 ) => sharedAiClient.generateTextWithUsage(prompt, options);
+
+export const estimateAiTextTokens = (text: string) =>
+	sharedAiClient.estimateTextTokens(text);
 
 /** シンプルなチャット用API（モデル名は隠蔽） */
 export const chatWithAssistant = (message: string, systemPrompt?: string) =>
