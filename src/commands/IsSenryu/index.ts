@@ -15,6 +15,8 @@ const formatSenryuResult = (
 			`入力: ${text}`,
 			`区切り: ${analysis.result.segments.join(" / ")}`,
 			`読み: ${analysis.result.reading}`,
+			`品質点: ${analysis.result.qualityScore}`,
+			`評価: ${analysis.result.qualityReasons.join("、") || "なし"}`,
 		].join("\n");
 	}
 
@@ -23,6 +25,11 @@ const formatSenryuResult = (
 		"",
 		`入力: ${text}`,
 		`理由: ${analysis.reason ?? "5・7・5 として判定できませんでした。"}`,
+		analysis.result ? `候補: ${analysis.result.segments.join(" / ")}` : null,
+		analysis.qualityScore !== null ? `品質点: ${analysis.qualityScore}` : null,
+		analysis.qualityReasons.length > 0
+			? `評価: ${analysis.qualityReasons.join("、")}`
+			: null,
 		`モーラ数: ${analysis.totalMora}`,
 		analysis.tokens.length > 0
 			? `Sudachi解析:\n${formatSudachiTokens(analysis.tokens)}`

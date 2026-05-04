@@ -9,24 +9,31 @@ interface MoraToken {
 	reading: string;
 	mora: number;
 	partOfSpeech: string[];
+	dictionaryForm: string;
 }
 
 interface SenryuCandidate {
 	segments: string[];
 	reading: string;
-	score: number;
+	moraDistance: number;
+	qualityScore: number;
+	qualityReasons: string[];
 	tokenCount: number;
 	start: number;
+	end: number;
 }
 
 export interface SenryuDetectionResult {
 	isSenryu: boolean;
 	segments: string[];
 	reading: string;
+	qualityScore: number;
+	qualityReasons: string[];
 }
 
 interface SenryuAnalyzeOptions {
 	exact?: boolean;
+	qualityThreshold?: number;
 }
 
 interface SenryuAnalysisResult {
@@ -37,7 +44,11 @@ interface SenryuAnalysisResult {
 	tokens: Morpheme[];
 	totalMora: number;
 	tokenReadings: string[];
+	qualityScore: number | null;
+	qualityReasons: string[];
 }
+
+const DEFAULT_QUALITY_THRESHOLD = 75;
 
 function sanitizeMessageContent(text: string): string {
 	return text
@@ -80,6 +91,7 @@ function toMoraTokens(
 		surface: string;
 		reading: string;
 		partOfSpeech: string[];
+		dictionaryForm: string;
 	}>,
 ): MoraToken[] {
 	return tokens.flatMap((token) => {
@@ -99,6 +111,7 @@ function toMoraTokens(
 				reading: hiraganaToKatakana(reading),
 				mora,
 				partOfSpeech: token.partOfSpeech,
+				dictionaryForm: token.dictionaryForm,
 			},
 		];
 	});
@@ -218,6 +231,162 @@ function hasAsciiDigitToken(
 		.some((token) => /[0-9０-９]/.test(token.surface));
 }
 
+function clampQualityScore(score: number): number {
+	return Math.max(0, Math.min(100, score));
+}
+
+function isMajorPartOfSpeech(
+	token: MoraToken | undefined,
+	partOfSpeech: string,
+): boolean {
+	return token?.partOfSpeech[0] === partOfSpeech;
+}
+
+function isNounLikeToken(token: MoraToken | undefined): boolean {
+	if (!token) {
+		return false;
+	}
+
+	const majorPartOfSpeech = token.partOfSpeech[0] ?? "";
+	const subPartOfSpeech = token.partOfSpeech[1] ?? "";
+	return (
+		majorPartOfSpeech === "名詞" ||
+		subPartOfSpeech === "固有名詞" ||
+		subPartOfSpeech === "代名詞"
+	);
+}
+
+function isPredicativeToken(token: MoraToken | undefined): boolean {
+	if (!token) {
+		return false;
+	}
+
+	return ["動詞", "形容詞", "形状詞"].includes(token.partOfSpeech[0] ?? "");
+}
+
+function isWeakEndingToken(token: MoraToken | undefined): boolean {
+	if (!token) {
+		return false;
+	}
+
+	return ["助詞", "助動詞", "接尾辞"].includes(token.partOfSpeech[0] ?? "");
+}
+
+function getContentMajorParts(tokens: MoraToken[]): string[] {
+	return tokens
+		.map((token) => token.partOfSpeech[0] ?? "")
+		.filter((partOfSpeech) =>
+			["名詞", "動詞", "形容詞", "形状詞", "副詞", "感動詞"].includes(
+				partOfSpeech,
+			),
+		);
+}
+
+function scoreSegmentEnding(token: MoraToken | undefined): number {
+	if (isNounLikeToken(token)) {
+		return 6;
+	}
+	if (isPredicativeToken(token)) {
+		return 3;
+	}
+	if (isWeakEndingToken(token)) {
+		return -8;
+	}
+	return 0;
+}
+
+function evaluateSenryuQuality(
+	tokens: MoraToken[],
+	start: number,
+	firstEnd: number,
+	secondEnd: number,
+	end: number,
+): Pick<SenryuCandidate, "qualityScore" | "qualityReasons"> {
+	let score = 50;
+	const reasons: string[] = [];
+	const candidateTokens = tokens.slice(start, end);
+	const finalToken = tokens[end - 1];
+
+	if (isNounLikeToken(finalToken)) {
+		score += 25;
+		reasons.push("終句が名詞系で余韻がある");
+	} else if (isPredicativeToken(finalToken)) {
+		score += 8;
+		reasons.push("終句が述語で閉じている");
+	} else if (isWeakEndingToken(finalToken)) {
+		score -= 25;
+		reasons.push("終句が助詞・助動詞系で弱い");
+	}
+
+	const segmentEnds = [
+		tokens[firstEnd - 1],
+		tokens[secondEnd - 1],
+		tokens[end - 1],
+	];
+	const segmentEndingScore = segmentEnds.reduce(
+		(total, token) => total + scoreSegmentEnding(token),
+		0,
+	);
+	score += segmentEndingScore;
+	if (segmentEndingScore > 0) {
+		reasons.push("句末の切れが比較的よい");
+	} else if (segmentEndingScore < 0) {
+		reasons.push("句末に弱い品詞が多い");
+	}
+
+	const contentMajorParts = getContentMajorParts(candidateTokens);
+	const uniqueContentMajorParts = new Set(contentMajorParts);
+	if (uniqueContentMajorParts.size >= 3) {
+		score += 8;
+		reasons.push("内容語の変化がある");
+	} else if (uniqueContentMajorParts.size <= 1) {
+		score -= 10;
+		reasons.push("内容語の変化が少ない");
+	}
+
+	const functionTokenCount = candidateTokens.filter((token) =>
+		["助詞", "助動詞"].includes(token.partOfSpeech[0] ?? ""),
+	).length;
+	const functionTokenRatio = functionTokenCount / candidateTokens.length;
+	if (functionTokenRatio >= 0.45) {
+		score -= 12;
+		reasons.push("助詞・助動詞の比率が高い");
+	}
+
+	const outsideMora =
+		tokens.slice(0, start).reduce((total, token) => total + token.mora, 0) +
+		tokens.slice(end).reduce((total, token) => total + token.mora, 0);
+	if (outsideMora === 0) {
+		score += 12;
+		reasons.push("本文全体が5・7・5に収まる");
+	}
+
+	if (
+		candidateTokens.some((token) =>
+			["です", "ます", "でした", "ました"].includes(token.dictionaryForm),
+		)
+	) {
+		score -= 10;
+		reasons.push("説明文調の語尾を含む");
+	}
+
+	if (
+		candidateTokens.some(
+			(token) =>
+				isMajorPartOfSpeech(token, "接続詞") ||
+				["そして", "だから", "しかし"].includes(token.dictionaryForm),
+		)
+	) {
+		score -= 8;
+		reasons.push("散文的な接続表現を含む");
+	}
+
+	return {
+		qualityScore: clampQualityScore(score),
+		qualityReasons: reasons,
+	};
+}
+
 function hasInvalidSegmentBoundary(
 	tokens: MoraToken[],
 	firstEnd: number,
@@ -285,9 +454,16 @@ function findBestSenryuCandidateForWindowRange(
 				continue;
 			}
 
-			const score = moraPattern.reduce(
+			const moraDistance = moraPattern.reduce(
 				(total, mora, index) => total + Math.abs(mora - TARGET_MORA[index]),
 				0,
+			);
+			const quality = evaluateSenryuQuality(
+				tokens,
+				start,
+				firstEnd,
+				secondEnd,
+				end,
 			);
 			const candidate = {
 				segments: [
@@ -296,9 +472,12 @@ function findBestSenryuCandidateForWindowRange(
 					buildSegment(tokens, secondEnd, end),
 				],
 				reading: buildReading(tokens, start, end),
-				score,
+				moraDistance,
+				qualityScore: quality.qualityScore,
+				qualityReasons: quality.qualityReasons,
 				tokenCount: end - start,
 				start,
+				end,
 			};
 
 			if (isBetterCandidate(candidate, bestCandidate)) {
@@ -318,8 +497,12 @@ function isBetterCandidate(
 		return true;
 	}
 
-	if (candidate.score !== current.score) {
-		return candidate.score < current.score;
+	if (candidate.qualityScore !== current.qualityScore) {
+		return candidate.qualityScore > current.qualityScore;
+	}
+
+	if (candidate.moraDistance !== current.moraDistance) {
+		return candidate.moraDistance < current.moraDistance;
 	}
 
 	if (candidate.start !== current.start) {
@@ -331,6 +514,7 @@ function isBetterCandidate(
 
 function findBestSenryuCandidate(tokens: MoraToken[]): SenryuCandidate | null {
 	const prefixSums = buildMoraPrefixSums(tokens);
+	let bestCandidate: SenryuCandidate | null = null;
 
 	for (let start = 0; start <= tokens.length - 3; start++) {
 		if (isInvalidCandidateStart(tokens[start], tokens[start + 1])) {
@@ -350,12 +534,15 @@ function findBestSenryuCandidate(tokens: MoraToken[]): SenryuCandidate | null {
 			}
 		}
 
-		if (bestCandidateForStart) {
-			return bestCandidateForStart;
+		if (
+			bestCandidateForStart &&
+			isBetterCandidate(bestCandidateForStart, bestCandidate)
+		) {
+			bestCandidate = bestCandidateForStart;
 		}
 	}
 
-	return null;
+	return bestCandidate;
 }
 
 function findExactSenryuCandidate(tokens: MoraToken[]): SenryuCandidate | null {
@@ -416,6 +603,8 @@ export async function analyzeSenryu(
 			tokens: [],
 			totalMora: 0,
 			tokenReadings: [],
+			qualityScore: null,
+			qualityReasons: [],
 		};
 	}
 
@@ -438,6 +627,8 @@ export async function analyzeSenryu(
 			tokens,
 			totalMora,
 			tokenReadings: moraTokens.map((token) => token.reading),
+			qualityScore: null,
+			qualityReasons: [],
 		};
 	}
 
@@ -453,14 +644,33 @@ export async function analyzeSenryu(
 			tokens,
 			totalMora: moraTokens.reduce((total, token) => total + token.mora, 0),
 			tokenReadings: moraTokens.map((token) => token.reading),
+			qualityScore: null,
+			qualityReasons: [],
 		};
 	}
 
+	const qualityThreshold =
+		options.qualityThreshold ?? DEFAULT_QUALITY_THRESHOLD;
 	const result = {
 		isSenryu: true,
 		segments: candidate.segments,
 		reading: candidate.reading,
+		qualityScore: candidate.qualityScore,
+		qualityReasons: candidate.qualityReasons,
 	};
+	if (candidate.qualityScore < qualityThreshold) {
+		return {
+			isSenryu: false,
+			result,
+			reason: `5・7・5 ですが品質点 ${candidate.qualityScore} 点が閾値 ${qualityThreshold} 点未満です。`,
+			sanitized,
+			tokens,
+			totalMora: moraTokens.reduce((total, token) => total + token.mora, 0),
+			tokenReadings: moraTokens.map((token) => token.reading),
+			qualityScore: candidate.qualityScore,
+			qualityReasons: candidate.qualityReasons,
+		};
+	}
 
 	return {
 		isSenryu: true,
@@ -470,6 +680,8 @@ export async function analyzeSenryu(
 		tokens,
 		totalMora: moraTokens.reduce((total, token) => total + token.mora, 0),
 		tokenReadings: moraTokens.map((token) => token.reading),
+		qualityScore: candidate.qualityScore,
+		qualityReasons: candidate.qualityReasons,
 	};
 }
 
@@ -477,5 +689,5 @@ export async function detectSenryu(
 	text: string,
 ): Promise<SenryuDetectionResult | null> {
 	const analysis = await analyzeSenryu(text);
-	return analysis.result;
+	return analysis.isSenryu ? analysis.result : null;
 }
