@@ -1,9 +1,4 @@
-import {
-	type TextChannel,
-	type ChatInputCommandInteraction,
-	type Message,
-	MessageFlags,
-} from "discord.js";
+import { type ChatInputCommandInteraction, MessageFlags } from "discord.js";
 
 /**
  * Discordの2000文字制限を考慮してメッセージを分割するユーティリティ
@@ -16,7 +11,7 @@ const DISCORD_CHUNK_LIMIT = 1800;
  * @param maxLength 最大文字数
  * @returns 分割されたメッセージの配列
  */
-export function splitMessage(message: string, maxLength = 2000): string[] {
+function splitMessage(message: string, maxLength = 2000): string[] {
 	if (message.length <= maxLength) {
 		return [message];
 	}
@@ -61,27 +56,6 @@ function forceSplitMessage(message: string, maxLength: number): string[] {
 	}
 
 	return chunks;
-}
-
-/**
- * チャンネルにメッセージを送信する（2000文字制限を自動処理）
- * @param channel 送信先チャンネル
- * @param content 送信するメッセージ内容
- * @returns 送信されたメッセージの配列
- */
-export async function sendLongMessage(
-	channel: TextChannel,
-	content: string,
-): Promise<Message[]> {
-	const chunks = splitMessage(content, DISCORD_CHUNK_LIMIT);
-	const sentMessages: Message[] = [];
-
-	for (const chunk of chunks) {
-		const message = await channel.send(chunk);
-		sentMessages.push(message);
-	}
-
-	return sentMessages;
 }
 
 /**

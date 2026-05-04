@@ -1,4 +1,5 @@
 import {
+	AttachmentBuilder,
 	ChannelType,
 	type ChatInputCommandInteraction,
 	type Collection,
@@ -18,9 +19,9 @@ import {
 } from "../../utils/dateUtils";
 import { logError, logInfo } from "../../utils/logger";
 import {
-	editAndFollowUpLongMessage,
-	sendLongMessage,
-} from "../../utils/messageUtils";
+	generateDailyNewspaperImage,
+	type NewspaperPhoto,
+} from "../../utils/newspaperImage";
 import {
 	estimateAiTextTokens,
 	generateAiTextWithUsage,
@@ -88,6 +89,15 @@ interface DailyMessageForSummary {
 	messageId: string;
 	channelId: string;
 	guildId: string;
+	imageAttachments: Array<{
+		url: string;
+		name: string;
+	}>;
+}
+
+interface DailySummaryResult {
+	summary: string;
+	photos: NewspaperPhoto[];
 }
 
 interface DailySummarySignal {
@@ -206,6 +216,28 @@ function normalizeSummaryJudgment(
 	);
 }
 
+function buildNewspaperPhotos(
+	messages: DailyMessageForSummary[],
+): NewspaperPhoto[] {
+	return messages.flatMap((message) =>
+		message.imageAttachments.map((attachment) => ({
+			url: attachment.url,
+			caption: `${message.timestamp.toLocaleString("ja-JP", {
+				hour: "2-digit",
+				minute: "2-digit",
+			})} ${message.author}: ${(
+				message.content ||
+				attachment.name ||
+				"画像投稿"
+			)
+				.replace(/\s+/g, " ")
+				.slice(0, 44)}${message.content.length > 44 ? "…" : ""}`,
+			timestamp: message.timestamp,
+			messageUrl: `https://discord.com/channels/${message.guildId}/${message.channelId}/${message.messageId}`,
+		})),
+	);
+}
+
 function buildDateInfoSection(dateInfo: {
 	month: number;
 	day: number;
@@ -262,11 +294,15 @@ ${buildDateInfoSection(dateInfo)}
 【新聞記者としての書き方】
 - 各記事は逆三角形で書く。1文目に「誰が/何が/どうした/なぜ面白いか」の核心を置き、2文目は補足か余韻にする
 - 5W1Hのうち、根拠メッセージから確認できる要素だけを書く。確認できない「なぜ」「目的」「感情」は書かない
-- 見出しは100字未満。具体名・出来事・意外性のどれかを入れる。抽象語だけの見出しは禁止
+- 見出しは短く鋭く書く。トップ見出しは22〜28字、小記事見出しは12〜18字。長い固有名詞は1つまで
 - 1記事1テーマ。複数の小話を無理に圧縮せず、重要でない要素は捨てる
 - 文章は短い段落で、1文1情報。受け身より「誰が何をした」が分かる能動文を優先する
 - 引用は短く、発言の味が出るものだけ使う。引用の意味を変えない。曖昧な引用は使わず要約する
-- ユーモアは見出しや比喩の軽さに限定する。事実を盛る、本人が言っていない感情を足す、架空のオチを作ることは禁止
+- ユーモアは「新聞記事として成立する軽い皮肉」に限定する。全記事で笑わせようとせず、7本中2本程度だけ少しひねる
+- AI感のある過度に丁寧な表現、説明口調、まとめサイト風の煽りは禁止
+- 使える笑いは、短い比喩、言葉の取り合わせ、少し硬い新聞語との落差だけ。ダジャレ・謎掛け・なぞなぞは多用しない
+- 例: 「胃袋だけが先に帰宅した」「紙面が少し傾いた」「現場の温度計が壊れた」「会議室より眉間が混雑した」
+- ただし、本人が言っていない感情を足す、架空のオチを作る、根拠発言を盛ることは禁止
 
 【ハルシネーション防止の絶対ルール】
 - Discord URLで裏付けられる事実だけを書く
@@ -283,16 +319,22 @@ ${buildDateInfoSection(dateInfo)}
 - 個人のメッセージや会話を優先的に取り上げる
 - ニュース価値が低い相槌、単なるURL共有、短い反応、状況説明だけの発言は減らす
 - 面白い展開、意外な失敗、会話の転がり、具体的な発見がある話題を優先する
-- トピックは5〜7個。内容が薄い日は3〜5個でもよい
+- トピックは必ず7個ちょうど出力する。主記事1個 + 小記事6個で紙面を固定するため、6個以下・8個以上は禁止
+- 画像付きメッセージがある日は、画像付きメッセージのURLを最優先でトピックに採用する。写真と記事を一致させるため、画像のURL行と違う話題を混ぜない
+- 画像付き投稿を記事化する場合は、その画像に写っているもの・添付投稿の本文・直後直前の反応だけを書く。別時刻の話題を同じ記事に混ぜることは禁止
 - 可能な範囲で時間帯が偏らないようにすること。ただし面白さを最優先する
 - ハレ・ケ判定の区分は、会話内容に大きく左右される
 - 以下の出力形式を100%、本当に絶対に厳守
 - 各トピックは必ずDiscord URLを1件含める
 - URL行は必ず単独行で「https://discord.com/channels/...」のみを書く（「URL:」や補足説明を付けない）
 - 絵文字と見出し記号はテンプレートと完全一致（「🔸」「🔮」を変更しない）
-- トピック本文は自然な新聞記事文体で1〜2文、160字以内にする（ラベル形式の「会話抜粋:」「要点:」は禁止）
+- トップ記事本文は自然な新聞記事文体で130〜160字。2〜3文で書く。120字未満は禁止、170字超過は禁止
+- 小記事本文は45〜65字。1〜2文で書く。40字未満は禁止、70字超過は禁止
+- 明日への一言は35〜55字。短い助言と軽い余韻だけにする
+- 文量を増やすために事実を足すのは禁止。根拠が少ない記事は、確認できる事実・発言の意味・会話上の位置づけを丁寧に書いて紙面本文にする
+- ラベル形式の「会話抜粋:」「要点:」は禁止
 - 会話内容は本文へ自然に織り込み、必要なら短い引用「...」として入れる
-- 見出しは自然な記事タイトルにする（例: 「みみちゃん、ウニにやられる？」）
+- 見出しは自然な記事タイトルにする（例: 「みみちゃん、ウニにやられる？」）。長い見出し、読点が2つ以上ある見出しは禁止
 - 「トピック1」「話題A」「会話まとめ」などの機械的タイトルは禁止
 - 文体は「短くて読みやすい新聞記事調」を維持する
 - 乾いた事務要約は禁止（例: 「価格設定」「反応で好評」「コストパフォーマンス」だけで終える文）
@@ -332,16 +374,18 @@ etc.
 🔸 **深夜の乾杯、議論は予想外の方向へ** - 10:01
 https://discord.com/channels/...
 飲み会の店選びで「酒なしでピンチケもんじゃはしゃばい」と異議が出た。値段そのものより、内容への納得感が争点になったのがこの日の小さな山場だ。
+会話は店の条件をめぐって続き、単なる価格比較ではなく「その場に何を期待するか」がにじむ展開になった。
+この一件で、深夜の議場は少しだけ胃袋寄りに傾いた。
 
 🔸 **増設チャレンジ、気合いで逆転起動** - 16:20
 https://discord.com/channels/...
-メモリ増設は一度うまくいかなかったが、最終的に起動した。技術作業のはずが、最後は少しだけ根性論の顔を見せた。
+メモリ増設は一度つまずいたが、最後は起動した。技術作業のはずが、少しだけ根性論の顔を見せた。
 
 （悪い例・この文体は禁止）
 - 「1人3000円で飲んで」と価格設定。
 - 「安いな」反応でコストパフォーマンスが好評。
 
-（以下同様に、選び抜いたトピックだけを続ける）
+（以下同様に、必ず合計7個の🔸トピックを出力する。7個未満で終わらない）
 
 🔮 **明日への一言**
 今日の分析を踏まえた明日へのアドバイスやメッセージ
@@ -388,13 +432,14 @@ ${seenUrls.length > 0 ? seenUrls.join("\n") : "なし"}
   1) - [HH:MM] 見出し
   2)   https://discord.com/channels/...
   3)   会話抜粋: 「...」
-  4)   要点: 確認できる事実と面白さが分かる1文
+  4)   要点: 確認できる事実と面白さが分かる45〜65字の取材メモ
 - 個人会話・やり取りを優先する
 - 相槌、単なるURL共有、短い反応、説明だけで展開のない話は落とす
 - 最終ニュースに残したい順で並べる
 - 根拠メッセージにない固有名詞、原因、結末、感情、人数、金額は追加しない
 - ユーモアのために事実を盛らない。面白さは、実際の発言や展開から拾う
 - X/Twitter取得内容は外部投稿として扱い、Discord参加者自身の体験に変換しない
+- 最終紙面は写真と大見出しで余白を埋めるため、小記事本文の候補は45〜65字に収める。トップ候補だけは130〜160字まで残す
 - URLは「URL:」等の接頭辞を付けず、単独行のDiscord URLだけにする
 `;
 
@@ -637,7 +682,7 @@ export const DailySummaryCommand: CommandDefinition = {
 			);
 
 			// サマリー生成が時間がかかる場合があるのでタイムアウト対策
-			let summary: string;
+			let summary: DailySummaryResult;
 			try {
 				const onProgress = async (message: string) => {
 					try {
@@ -658,9 +703,15 @@ export const DailySummaryCommand: CommandDefinition = {
 				});
 
 				summary = await Promise.race([
-					generateDailySummary(interaction, undefined, highlight, dateString, {
-						onProgress,
-					}),
+					generateDailySummaryWithNewspaperData(
+						interaction,
+						undefined,
+						highlight,
+						dateString,
+						{
+							onProgress,
+						},
+					),
 					timeoutPromise,
 				]);
 			} catch (error) {
@@ -703,6 +754,15 @@ export const DailySummaryCommand: CommandDefinition = {
 				return;
 			}
 
+			if (
+				summary.summary.includes(
+					"日次サマリー用のチャンネルが設定されていません",
+				)
+			) {
+				await interaction.editReply(summary.summary);
+				return;
+			}
+
 			if (summaryChannelId) {
 				// 投稿用チャンネルが設定されている場合はそこに投稿
 				const summaryChannel =
@@ -716,10 +776,19 @@ export const DailySummaryCommand: CommandDefinition = {
 					const displayDateString =
 						formatToDetailedJapaneseDate(targetDateForDisplay);
 
-					const summaryWithDate = `# ${displayDateString}のサーバーニュース\n\n${summary}`;
+					const imageBuffer = await generateDailyNewspaperImage(
+						summary.summary,
+						displayDateString,
+						summary.photos,
+					);
+					const attachment = new AttachmentBuilder(imageBuffer, {
+						name: "server-newspaper.png",
+					});
 
-					// メッセージが2000文字を超える場合は分割送信
-					await sendLongMessage(summaryChannel as TextChannel, summaryWithDate);
+					await (summaryChannel as TextChannel).send({
+						content: `# ${displayDateString}のサーバーニュース`,
+						files: [attachment],
+					});
 
 					await interaction.editReply({
 						content: `✅ 日次サマリーを ${summaryChannel.name} に投稿しました。`,
@@ -731,9 +800,24 @@ export const DailySummaryCommand: CommandDefinition = {
 					});
 				}
 			} else {
-				// 従来通りの動作（実行されたチャンネルに返信）
-				// メッセージが2000文字を超える場合は分割送信
-				await editAndFollowUpLongMessage(interaction, summary);
+				const targetDateForDisplay = getJSTDateForJudgment(
+					dateString || undefined,
+				);
+				const displayDateString =
+					formatToDetailedJapaneseDate(targetDateForDisplay);
+				const imageBuffer = await generateDailyNewspaperImage(
+					summary.summary,
+					displayDateString,
+					summary.photos,
+				);
+				const attachment = new AttachmentBuilder(imageBuffer, {
+					name: "server-newspaper.png",
+				});
+
+				await interaction.editReply({
+					content: `# ${displayDateString}のサーバーニュース`,
+					files: [attachment],
+				});
 			}
 
 			logInfo(`Daily summary command executed by ${interaction.user.username}`);
@@ -756,13 +840,13 @@ export const DailySummaryCommand: CommandDefinition = {
 	},
 };
 
-export async function generateDailySummary(
+export async function generateDailySummaryWithNewspaperData(
 	interaction: ChatInputCommandInteraction,
 	targetChannelIds?: string | string[],
 	highlight?: string | null,
 	targetDate?: string | null,
 	options?: DailySummaryGenerationOptions,
-): Promise<string> {
+): Promise<DailySummaryResult> {
 	try {
 		const guild = interaction.guild;
 
@@ -787,7 +871,11 @@ export async function generateDailySummary(
 			const configuredChannelIds = dailyChannelService.getChannels(guild.id);
 
 			if (configuredChannelIds.length === 0) {
-				return "日次サマリー用のチャンネルが設定されていません。`/daily-config add` でチャンネルを追加してください。";
+				return {
+					summary:
+						"日次サマリー用のチャンネルが設定されていません。`/daily-config add` でチャンネルを追加してください。",
+					photos: [],
+				};
 			}
 
 			channelIds = configuredChannelIds;
@@ -856,8 +944,24 @@ export async function generateDailySummary(
 						message.createdAt < jstEndTime &&
 						!message.author.bot
 					) {
-						if (message.content && message.content.length > 0) {
-							let content = message.content;
+						const imageAttachments = Array.from(message.attachments.values())
+							.filter((attachment) =>
+								attachment.contentType?.startsWith("image/"),
+							)
+							.map((attachment) => ({
+								url: attachment.url,
+								name: attachment.name ?? "image",
+							}));
+
+						if (
+							(message.content && message.content.length > 0) ||
+							imageAttachments.length > 0
+						) {
+							let content =
+								message.content ||
+								`[画像投稿: ${imageAttachments
+									.map((attachment) => attachment.name)
+									.join(", ")}]`;
 
 							// Twitter/X URLを検出してコンテンツを取得
 							const twitterUrls = extractTwitterUrls(content);
@@ -878,6 +982,7 @@ export async function generateDailySummary(
 								messageId: message.id,
 								channelId: message.channelId,
 								guildId: guild.id,
+								imageAttachments,
 							});
 						}
 					}
@@ -894,12 +999,15 @@ export async function generateDailySummary(
 		// メッセージが0件の場合の処理
 		if (todaysMessages.length === 0) {
 			const targetDateStr = targetDate || "today";
-			return `📰 **今日のサーバーニュース**
+			return {
+				summary: `📰 **今日のサーバーニュース**
 
 ${targetDateStr}はメッセージが見つかりませんでした。
 
 🔸 **静かな一日**
-今日は穏やかな一日でした。明日に向けてエネルギーを蓄える時間でしたね。`;
+今日は穏やかな一日でした。明日に向けてエネルギーを蓄える時間でしたね。`,
+				photos: [],
+			};
 		}
 
 		todaysMessages.sort(
@@ -914,9 +1022,28 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 					minute: "2-digit",
 				});
 				const messageUrl = `https://discord.com/channels/${msg.guildId}/${msg.channelId}/${msg.messageId}`;
-				return `[${timeString}] [${msg.channel}] ${msg.author}: ${msg.content} | ${messageUrl}`;
+				const imageNote =
+					msg.imageAttachments.length > 0
+						? ` [画像${msg.imageAttachments.length}枚: ${msg.imageAttachments
+								.map((attachment) => attachment.name)
+								.join(", ")}]`
+						: "";
+				return `[${timeString}] [${msg.channel}] ${msg.author}: ${msg.content}${imageNote} | ${messageUrl}`;
 			})
 			.join("\n");
+		const imageMessageUrls = todaysMessages
+			.filter((msg) => msg.imageAttachments.length > 0)
+			.map((msg) => {
+				const timeString = msg.timestamp.toLocaleString("ja-JP", {
+					hour: "2-digit",
+					minute: "2-digit",
+				});
+				return `- ${timeString} ${msg.author}: https://discord.com/channels/${msg.guildId}/${msg.channelId}/${msg.messageId}`;
+			})
+			.join("\n");
+		const sourceTextForSummary = imageMessageUrls
+			? `${messagesWithMeta}\n\n【写真付き投稿URL（写真と記事を一致させるため優先採用）】\n${imageMessageUrls}`
+			: messagesWithMeta;
 
 		// 日付情報を収集
 		const targetDateForAnalysis = getJSTDateForJudgment(
@@ -933,7 +1060,7 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 
 		// Gemini APIで入力トークンを見積もり、上限を超える場合は分割して統合する
 		const fullPrompt = buildFinalSummaryPrompt(
-			messagesWithMeta,
+			sourceTextForSummary,
 			dateInfo,
 			"raw_messages",
 			summarySignal,
@@ -971,7 +1098,7 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 				].join("\n"),
 			);
 
-			const messageLines = messagesWithMeta.split("\n");
+			const messageLines = sourceTextForSummary.split("\n");
 			const chunkPromptBase = buildChunkDigestPrompt(
 				"",
 				dateInfo,
@@ -1112,7 +1239,10 @@ ${targetDateStr}はメッセージが見つかりませんでした。
 			);
 		}
 
-		return normalizeSummaryJudgment(summary, summarySignal);
+		return {
+			summary: normalizeSummaryJudgment(summary, summarySignal),
+			photos: buildNewspaperPhotos(todaysMessages),
+		};
 	} catch (error) {
 		logError(`Error generating daily summary: ${error}`);
 		throw error;

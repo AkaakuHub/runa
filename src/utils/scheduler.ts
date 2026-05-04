@@ -1,15 +1,16 @@
 import {
+	AttachmentBuilder,
 	ChannelType,
 	type ChatInputCommandInteraction,
 	type Client,
 	type TextChannel,
 } from "discord.js";
 import * as cron from "node-cron";
-import { generateDailySummary } from "../commands/DailySummary";
+import { generateDailySummaryWithNewspaperData } from "../commands/DailySummary";
 import { dailyChannelService } from "../services/DailyChannelService";
 import { getCurrentJSTDateString } from "./dateUtils";
 import { logDebug, logError, logInfo, logWarn } from "./logger";
-import { splitMessage } from "./messageUtils";
+import { generateDailyNewspaperImage } from "./newspaperImage";
 
 export function setupDailySummaryScheduler(client: Client): void {
 	cron.schedule(
@@ -78,17 +79,19 @@ export function setupDailySummaryScheduler(client: Client): void {
 						// 時間シードの可能性があるので0~2秒の間で、ミリ秒単位でランダムに待機
 						const delayMs = Math.floor(Math.random() * 2000);
 						await new Promise((resolve) => setTimeout(resolve, delayMs));
-						const summary = await generateDailySummary(
+						const summary = await generateDailySummaryWithNewspaperData(
 							mockInteraction,
 							configuredChannelIds,
 						);
-						logDebug(`Summary generated, length: ${summary.length} characters`);
+						logDebug(
+							`Summary generated, length: ${summary.summary.length} characters`,
+						);
 
 						if (
-							summary.includes(
+							summary.summary.includes(
 								"日次サマリー用のチャンネルが設定されていません",
 							) ||
-							summary.includes("今日はメッセージが見つかりませんでした")
+							summary.summary.includes("今日はメッセージが見つかりませんでした")
 						) {
 							logWarn(
 								`⚠️ Skipping guild ${guild.name} - no content to summarize`,
@@ -98,20 +101,19 @@ export function setupDailySummaryScheduler(client: Client): void {
 
 						// 統一されたユーティリティを使用して日付を取得
 						const dateString = getCurrentJSTDateString();
-						const summaryWithDate = `# ${dateString}のサーバーニュース\n\n${summary}`;
+						const imageBuffer = await generateDailyNewspaperImage(
+							summary.summary,
+							dateString,
+							summary.photos,
+						);
+						const attachment = new AttachmentBuilder(imageBuffer, {
+							name: "server-newspaper.png",
+						});
 
-						// メッセージが2000文字を超える場合は分割送信
-						if (summaryWithDate.length <= 2000) {
-							await targetChannel.send(summaryWithDate);
-						} else {
-							logDebug(
-								`Message too long (${summaryWithDate.length} chars), splitting...`,
-							);
-							const chunks = splitMessage(summaryWithDate, 2000);
-							for (const chunk of chunks) {
-								await targetChannel.send(chunk);
-							}
-						}
+						await targetChannel.send({
+							content: `# ${dateString}のサーバーニュース`,
+							files: [attachment],
+						});
 
 						logInfo(
 							`✅ Daily summary sent to ${guild.name}#${targetChannel.name}`,
