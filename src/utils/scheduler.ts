@@ -8,9 +8,12 @@ import {
 import * as cron from "node-cron";
 import { generateDailySummaryWithNewspaperData } from "../commands/DailySummary";
 import { dailyChannelService } from "../services/DailyChannelService";
+import { reminderService } from "../services/ReminderService";
 import { getCurrentJSTDateString } from "./dateUtils";
 import { logDebug, logError, logInfo, logWarn } from "./logger";
 import { generateDailyNewspaperImage } from "./newspaperImage";
+
+const REMINDER_CHECK_INTERVAL_MS = 30 * 1000;
 
 export function setupDailySummaryScheduler(client: Client): void {
 	cron.schedule(
@@ -134,4 +137,47 @@ export function setupDailySummaryScheduler(client: Client): void {
 	);
 
 	logInfo("Daily summary scheduler initialized (23:50 JST)");
+}
+
+export function setupReminderScheduler(client: Client): void {
+	let isRunning = false;
+
+	const runDueReminderCheck = async () => {
+		if (isRunning) return;
+		isRunning = true;
+
+		try {
+			const dueReminders = reminderService.getDueReminders();
+			for (const reminder of dueReminders) {
+				try {
+					const channel = await client.channels.fetch(reminder.channelId);
+					if (!channel?.isSendable()) {
+						logWarn(
+							`Reminder channel not found or not sendable: ${reminder.channelId}`,
+						);
+						continue;
+					}
+
+					await channel.send({
+						content: `<@${reminder.userId}> リマインダーです: ${reminder.message}`,
+					});
+					await reminderService.markDelivered(reminder.id);
+					logInfo(`Reminder delivered: ${reminder.id}`);
+				} catch (error) {
+					logError(`Failed to deliver reminder ${reminder.id}: ${error}`);
+				}
+			}
+		} catch (error) {
+			logError(`Error in reminder scheduler: ${error}`);
+		} finally {
+			isRunning = false;
+		}
+	};
+
+	void runDueReminderCheck();
+	setInterval(() => {
+		void runDueReminderCheck();
+	}, REMINDER_CHECK_INTERVAL_MS);
+
+	logInfo("Reminder scheduler initialized (30s interval)");
 }

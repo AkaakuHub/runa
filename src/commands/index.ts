@@ -14,6 +14,7 @@ import { ListCommand } from "./Music/list";
 import { SkipCommand } from "./Music/skip";
 import { VolumeCommand } from "./Music/volume";
 import { PingCommand } from "./Ping";
+import { ReminderCommand } from "./Reminder";
 import { SudachiCommand } from "./Sudachi";
 import { TTSCommand } from "./TTS";
 import { TTSPitchCommand } from "./TTS/pitch";
@@ -26,6 +27,7 @@ import { TTSVolumeCommand } from "./TTS/volume";
 // すべての公開するコマンドの一覧
 const commandsList: CommandDefinition[] = [
 	PingCommand,
+	ReminderCommand,
 	DebianCommand,
 	DailySummaryCommand,
 	DailyConfigCommand,
