@@ -2,10 +2,8 @@ import { type ChatInputCommandInteraction, MessageFlags } from "discord.js";
 import { reminderService } from "../../services/ReminderService";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
-import {
-	formatReminderDateTime,
-	parseReminderText,
-} from "../../utils/reminderParser";
+import { buildReminderRegisteredMessage } from "../../utils/reminderFormatter";
+import { parseReminderText } from "../../utils/reminderParser";
 
 export const ReminderCommand: CommandDefinition = {
 	name: "remind",
@@ -44,7 +42,10 @@ export const ReminderCommand: CommandDefinition = {
 			});
 
 			await interaction.editReply({
-				content: buildRegisteredMessage(parsed.remindAt, parsed.message),
+				content: buildReminderRegisteredMessage(
+					parsed.remindAt,
+					parsed.message,
+				),
 			});
 
 			logInfo(
@@ -68,10 +69,6 @@ export const ReminderCommand: CommandDefinition = {
 		}
 	},
 };
-
-function buildRegisteredMessage(remindAt: Date, message: string): string {
-	return `${formatReminderDateTime(remindAt)} に「${message}」をリマインドします！`;
-}
 
 function buildParseFailureMessage(reason: string, question?: string): string {
 	if (question) {

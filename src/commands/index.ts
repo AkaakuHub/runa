@@ -15,6 +15,8 @@ import { SkipCommand } from "./Music/skip";
 import { VolumeCommand } from "./Music/volume";
 import { PingCommand } from "./Ping";
 import { ReminderCommand } from "./Reminder";
+import { ReminderCancelCommand } from "./Reminder/cancel";
+import { ReminderListCommand } from "./Reminder/list";
 import { SudachiCommand } from "./Sudachi";
 import { TTSCommand } from "./TTS";
 import { TTSPitchCommand } from "./TTS/pitch";
@@ -28,6 +30,8 @@ import { TTSVolumeCommand } from "./TTS/volume";
 const commandsList: CommandDefinition[] = [
 	PingCommand,
 	ReminderCommand,
+	ReminderListCommand,
+	ReminderCancelCommand,
 	DebianCommand,
 	DailySummaryCommand,
 	DailyConfigCommand,

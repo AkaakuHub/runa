@@ -39,6 +39,7 @@ export function formatReminderDateTime(date: Date): string {
 		weekday: "short",
 		hour: "2-digit",
 		minute: "2-digit",
+		second: "2-digit",
 		hour12: false,
 	}).format(date);
 }
@@ -48,6 +49,7 @@ export async function parseReminderText(
 	now: Date = new Date(),
 ): Promise<ReminderParseResult> {
 	const normalizedInput = input.trim();
+	const shouldKeepSeconds = hasExplicitSeconds(normalizedInput);
 	if (!normalizedInput) {
 		return {
 			ok: false,
@@ -55,14 +57,18 @@ export async function parseReminderText(
 		};
 	}
 
-	const localResult = parseSimpleRelativeReminder(normalizedInput, now);
+	const localResult = parseSimpleRelativeReminder(
+		normalizedInput,
+		now,
+		shouldKeepSeconds,
+	);
 	if (localResult) {
 		return localResult;
 	}
 
 	try {
 		const aiResult = await parseReminderWithAi(normalizedInput, now);
-		return validateAiResult(aiResult, now);
+		return validateAiResult(aiResult, now, shouldKeepSeconds);
 	} catch (error) {
 		logError(`Reminder AI parse failed: ${error}`);
 		return {
@@ -76,9 +82,10 @@ export async function parseReminderText(
 function parseSimpleRelativeReminder(
 	input: string,
 	now: Date,
+	shouldKeepSeconds: boolean,
 ): ReminderParseResult | null {
 	const relativeMatch = input.match(
-		/^(?:(\d+)\s*(分|時間|日)後(?:に)?)[\s、,]*(.+)$/u,
+		/^(?:(\d+)\s*(秒|分|時間|日)後(?:に)?)[\s、,]*(.+)$/u,
 	);
 	if (!relativeMatch) return null;
 
@@ -92,6 +99,9 @@ function parseSimpleRelativeReminder(
 
 	const remindAt = new Date(now.getTime());
 	switch (unit) {
+		case "秒":
+			remindAt.setSeconds(remindAt.getSeconds() + amount);
+			break;
 		case "分":
 			remindAt.setMinutes(remindAt.getMinutes() + amount);
 			break;
@@ -104,7 +114,7 @@ function parseSimpleRelativeReminder(
 		default:
 			return null;
 	}
-	normalizeReminderDate(remindAt);
+	normalizeReminderDate(remindAt, shouldKeepSeconds);
 
 	return {
 		ok: true,
@@ -131,7 +141,7 @@ async function parseReminderWithAi(
 ルール:
 - 出力はJSONオブジェクトのみ。Markdownや説明文は禁止。
 - remindAt は ISO 8601 形式で、必ず Asia/Tokyo の +09:00 オフセットを含める。
-- remindAt の秒とミリ秒は必ず 00 にする。
+- ユーザーが秒を明示した場合はその秒を使う。秒の指定がない場合、秒とミリ秒は必ず 00 にする。
 - 「明日」「来週」「朝」「昼」「夜」などは現在時刻を基準に自然に解釈する。
 - 「朝」は 09:00、「昼」は 12:00、「夕方」は 18:00、「夜」は 21:00 とする。
 - 日時が曖昧すぎる、または通知本文がない場合は needsConfirmation を true にする。
@@ -162,6 +172,7 @@ ${JSON.stringify(input)}`;
 function validateAiResult(
 	result: AiReminderParseResult,
 	now: Date,
+	shouldKeepSeconds: boolean,
 ): ReminderParseResult {
 	const confidence =
 		typeof result.confidence === "number" ? result.confidence : 0;
@@ -183,7 +194,7 @@ function validateAiResult(
 	}
 
 	const remindAt = new Date(result.remindAt);
-	normalizeReminderDate(remindAt);
+	normalizeReminderDate(remindAt, shouldKeepSeconds);
 	const message = cleanupReminderMessage(result.message);
 
 	if (Number.isNaN(remindAt.getTime())) {
@@ -248,8 +259,16 @@ function parseJsonObject(text: string): AiReminderParseResult {
 	return JSON.parse(candidate.slice(start, end + 1)) as AiReminderParseResult;
 }
 
-function normalizeReminderDate(date: Date): void {
+function normalizeReminderDate(date: Date, shouldKeepSeconds: boolean): void {
+	if (shouldKeepSeconds) {
+		date.setMilliseconds(0);
+		return;
+	}
 	date.setSeconds(0, 0);
+}
+
+function hasExplicitSeconds(input: string): boolean {
+	return /\d+\s*秒/u.test(input) || /\b\d{1,2}:\d{2}:\d{2}\b/u.test(input);
 }
 
 function cleanupReminderMessage(message: string): string {

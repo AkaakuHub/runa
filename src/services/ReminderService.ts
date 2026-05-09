@@ -5,7 +5,7 @@ import { logError } from "../utils/logger";
 
 type ReminderSource = "slash" | "mention";
 
-interface Reminder {
+export interface Reminder {
 	id: string;
 	guildId: string | null;
 	channelId: string;
@@ -15,6 +15,7 @@ interface Reminder {
 	source: ReminderSource;
 	createdAt: string;
 	deliveredAt?: string;
+	canceledAt?: string;
 }
 
 interface CreateReminderParams {
@@ -59,8 +60,44 @@ class ReminderService {
 		const nowTime = now.getTime();
 		return this.reminders.filter((reminder) => {
 			if (reminder.deliveredAt) return false;
+			if (reminder.canceledAt) return false;
 			return new Date(reminder.remindAt).getTime() <= nowTime;
 		});
+	}
+
+	listPendingForUser(userId: string, guildId: string | null): Reminder[] {
+		return this.reminders
+			.filter((reminder) => {
+				if (reminder.userId !== userId) return false;
+				if (reminder.guildId !== guildId) return false;
+				if (reminder.deliveredAt || reminder.canceledAt) return false;
+				return true;
+			})
+			.sort(
+				(a, b) =>
+					new Date(a.remindAt).getTime() - new Date(b.remindAt).getTime(),
+			);
+	}
+
+	async cancelPendingForUser(
+		idPrefix: string,
+		userId: string,
+		guildId: string | null,
+		canceledAt: Date = new Date(),
+	): Promise<"canceled" | "not_found" | "ambiguous"> {
+		const normalizedPrefix = idPrefix.trim().toLowerCase();
+		if (!normalizedPrefix) return "not_found";
+
+		const matches = this.listPendingForUser(userId, guildId).filter(
+			(reminder) => reminder.id.toLowerCase().startsWith(normalizedPrefix),
+		);
+
+		if (matches.length === 0) return "not_found";
+		if (matches.length > 1) return "ambiguous";
+
+		matches[0].canceledAt = canceledAt.toISOString();
+		await this.save();
+		return "canceled";
 	}
 
 	async markDelivered(
