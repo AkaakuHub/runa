@@ -1,6 +1,6 @@
 import type { ChatInputCommandInteraction } from "discord.js";
-import type { CommandDefinition } from "../../types";
 import { MusicService } from "../../services/MusicService";
+import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 
 export const SkipCommand: CommandDefinition = {

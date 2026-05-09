@@ -1,8 +1,8 @@
 import type { ChatInputCommandInteraction } from "discord.js";
-import type { CommandDefinition } from "../../types";
-import { logInfo, logError } from "../../utils/logger";
-import { convertTwitterLinks } from "../../utils/fxTwitter";
 import { config } from "../../config/config";
+import type { CommandDefinition } from "../../types";
+import { convertTwitterLinks } from "../../utils/fxTwitter";
+import { logError, logInfo } from "../../utils/logger";
 
 export const FxCommand: CommandDefinition = {
 	name: "fx",

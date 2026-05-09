@@ -1,8 +1,8 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import { MessageFlags } from "discord.js";
+import { TTSService } from "../../services/TTSService";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
-import { TTSService } from "../../services/TTSService";
 
 export const TTSPitchCommand: CommandDefinition = {
 	name: "tts_pitch",

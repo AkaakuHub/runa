@@ -1,5 +1,5 @@
-import { type Morpheme, MorphologyService } from "./MorphologyService";
 import { isAscii, isHiragana, katakanaToHiragana } from "../utils/kana";
+import { type Morpheme, MorphologyService } from "./MorphologyService";
 
 type GomamayoKind = "none" | "gomamayo" | "high-order" | "n-term";
 

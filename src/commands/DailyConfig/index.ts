@@ -1,11 +1,11 @@
 import {
-	type ChatInputCommandInteraction,
 	ChannelType,
+	type ChatInputCommandInteraction,
 	MessageFlags,
 } from "discord.js";
+import { dailyChannelService } from "../../services/DailyChannelService";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
-import { dailyChannelService } from "../../services/DailyChannelService";
 
 export const DailyConfigCommand: CommandDefinition = {
 	name: "daily-config",

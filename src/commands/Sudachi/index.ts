@@ -1,6 +1,6 @@
 import type { ChatInputCommandInteraction } from "discord.js";
-import type { CommandDefinition } from "../../types";
 import { MorphologyService } from "../../services/MorphologyService";
+import type { CommandDefinition } from "../../types";
 import { logError } from "../../utils/logger";
 import { editAndFollowUpLongMessage } from "../../utils/messageUtils";
 import { formatSudachiTokens } from "../../utils/sudachiFormatter";

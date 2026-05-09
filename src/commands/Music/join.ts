@@ -5,10 +5,10 @@ import type {
 	VoiceChannel,
 } from "discord.js";
 import { MessageFlags } from "discord.js";
-import type { CommandDefinition } from "../../types";
-import { TTSService } from "../../services/TTSService";
-import { logError, logInfo } from "../../utils/logger";
 import { MusicService } from "../../services/MusicService";
+import { TTSService } from "../../services/TTSService";
+import type { CommandDefinition } from "../../types";
+import { logError, logInfo } from "../../utils/logger";
 
 export const JoinCommand: CommandDefinition = {
 	name: "join",

@@ -1,6 +1,7 @@
-import { MorphologyService } from "../services/MorphologyService";
 import type { Morpheme } from "../services/MorphologyService";
+import { MorphologyService } from "../services/MorphologyService";
 import { hiraganaToKatakana, isKana, isSmallKana } from "./kana";
+
 const TARGET_MORA = [5, 7, 5] as const;
 const TARGET_TOTAL_MORA = TARGET_MORA.reduce((total, mora) => total + mora, 0);
 

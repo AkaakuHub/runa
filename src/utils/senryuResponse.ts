@@ -1,6 +1,6 @@
-import * as d3 from "d3";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import * as d3 from "d3";
 import { JSDOM } from "jsdom";
 import sharp from "sharp";
 import type { SenryuDetectionResult } from "./senryuDetector";
