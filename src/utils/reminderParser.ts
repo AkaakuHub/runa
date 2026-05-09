@@ -104,6 +104,7 @@ function parseSimpleRelativeReminder(
 		default:
 			return null;
 	}
+	normalizeReminderDate(remindAt);
 
 	return {
 		ok: true,
@@ -130,6 +131,7 @@ async function parseReminderWithAi(
 ルール:
 - 出力はJSONオブジェクトのみ。Markdownや説明文は禁止。
 - remindAt は ISO 8601 形式で、必ず Asia/Tokyo の +09:00 オフセットを含める。
+- remindAt の秒とミリ秒は必ず 00 にする。
 - 「明日」「来週」「朝」「昼」「夜」などは現在時刻を基準に自然に解釈する。
 - 「朝」は 09:00、「昼」は 12:00、「夕方」は 18:00、「夜」は 21:00 とする。
 - 日時が曖昧すぎる、または通知本文がない場合は needsConfirmation を true にする。
@@ -181,6 +183,7 @@ function validateAiResult(
 	}
 
 	const remindAt = new Date(result.remindAt);
+	normalizeReminderDate(remindAt);
 	const message = cleanupReminderMessage(result.message);
 
 	if (Number.isNaN(remindAt.getTime())) {
@@ -243,6 +246,10 @@ function parseJsonObject(text: string): AiReminderParseResult {
 	}
 
 	return JSON.parse(candidate.slice(start, end + 1)) as AiReminderParseResult;
+}
+
+function normalizeReminderDate(date: Date): void {
+	date.setSeconds(0, 0);
 }
 
 function cleanupReminderMessage(message: string): string {
