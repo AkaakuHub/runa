@@ -11,22 +11,22 @@ import {
 	buildReminderRegisteredMessage,
 } from "./reminderFormatter";
 import { parseReminderEditText, parseReminderText } from "./reminderParser";
-
-const ANY_REMINDER_TRIGGER_REGEX = /(?:remind|リマインド|リマインダー|予約)/iu;
-const REMINDER_WORD_REGEX = /(?:remind|リマインド|リマインダー|予約)/giu;
-const LIST_WORD_REGEX = /(?:list|リスト|一覧|確認|表示)/iu;
-const CANCEL_WORD_REGEX =
-	/(?:cancel|キャンセル|削除|取消|取り消し|消して|消す|消したい|解除)/iu;
-const EDIT_WORD_REGEX =
-	/(?:edit|編集|変更|変えて|修正|じゃなくて|ではなく|にして)/iu;
-const LATEST_REFERENCE_REGEX = /(?:さっき|先ほど|さきほど|直近|最後|最新)/iu;
-const ID_REGEX = /`?([0-9a-f]{6,}(?:-[0-9a-f-]+)?)`?/iu;
+import { generateAiTextWithUsage } from "./useAI";
 
 type ReminderMentionAction =
+	| { type: "none" }
 	| { type: "list" }
-	| { type: "cancel"; id: string }
+	| { type: "cancel"; id?: string; useLatest?: boolean }
 	| { type: "edit"; id?: string; useLatest?: boolean; text: string }
 	| { type: "create"; text: string };
+
+interface AiReminderMentionAction {
+	action?: "none" | "list" | "cancel" | "edit" | "create";
+	id?: string | null;
+	useLatest?: boolean;
+	text?: string | null;
+	confidence?: number;
+}
 
 export async function handleReminderMention(
 	message: Message,
@@ -40,11 +40,14 @@ export async function handleReminderMention(
 		.replace(new RegExp(`<@!?${botUser.id}>`, "g"), "")
 		.trim();
 
-	if (!ANY_REMINDER_TRIGGER_REGEX.test(contentWithoutMention)) {
+	if (!contentWithoutMention) {
 		return false;
 	}
 
-	const action = detectReminderMentionAction(contentWithoutMention);
+	const action = await detectReminderMentionAction(contentWithoutMention);
+	if (action.type === "none") {
+		return false;
+	}
 
 	if (action.type === "list") {
 		const reminders = reminderService.listPendingForUser(
@@ -56,18 +59,34 @@ export async function handleReminderMention(
 	}
 
 	if (action.type === "cancel") {
-		const id = action.id;
+		const targetReminder = resolveReminderTarget(
+			action,
+			message.author.id,
+			message.guildId,
+		);
+
+		if (targetReminder === "ambiguous") {
+			await message.reply(
+				"そのIDに一致するリマインダーが複数あります。もう少し長いIDを指定してください。",
+			);
+			return true;
+		}
+		if (targetReminder === "not_found") {
+			await message.reply("キャンセルするリマインダーが見つかりませんでした。");
+			return true;
+		}
+
 		const result = await reminderService.cancelPendingForUser(
-			id,
+			targetReminder.id,
 			message.author.id,
 			message.guildId,
 		);
 
 		switch (result) {
 			case "canceled":
-				await message.reply(buildReminderCanceledMessage(id));
+				await message.reply(buildReminderCanceledMessage(targetReminder.id));
 				logInfo(
-					`Reminder canceled by mention from ${message.author.username}: ${id}`,
+					`Reminder canceled by mention from ${message.author.username}: ${targetReminder.id}`,
 				);
 				return true;
 			case "ambiguous":
@@ -82,18 +101,11 @@ export async function handleReminderMention(
 	}
 
 	if (action.type === "edit") {
-		const targetReminder = action.id
-			? reminderService.findPendingForUser(
-					action.id,
-					message.author.id,
-					message.guildId,
-				)
-			: action.useLatest
-				? (reminderService.getLatestPendingForUser(
-						message.author.id,
-						message.guildId,
-					) ?? "not_found")
-				: "not_found";
+		const targetReminder = resolveReminderTarget(
+			action,
+			message.author.id,
+			message.guildId,
+		);
 
 		if (targetReminder === "ambiguous") {
 			await message.reply(
@@ -108,7 +120,7 @@ export async function handleReminderMention(
 
 		if (!action.text.trim()) {
 			await message.reply(
-				"変更内容を指定してください。例: `@bot リマインド 1234abcd を明日の9時に変更`",
+				"変更内容を指定してください。例: `@bot さっきの予約を明日の9時に変更`",
 			);
 			return true;
 		}
@@ -161,7 +173,7 @@ export async function handleReminderMention(
 	const reminderText = action.text;
 	if (!reminderText.trim()) {
 		await message.reply(
-			"リマインド内容を指定してください。例: `@bot remind 明日の9時に燃えるゴミ`",
+			"リマインド内容を指定してください。例: `@bot 明日の9時に燃えるゴミをリマインドして`",
 		);
 		return true;
 	}
@@ -205,53 +217,125 @@ export async function handleReminderMention(
 	}
 }
 
-function detectReminderMentionAction(content: string): ReminderMentionAction {
-	const normalized = content.trim();
-
-	if (LIST_WORD_REGEX.test(normalized)) {
-		return { type: "list" };
+async function detectReminderMentionAction(
+	content: string,
+): Promise<ReminderMentionAction> {
+	try {
+		const aiAction = await classifyReminderMentionAction(content);
+		return normalizeReminderMentionAction(aiAction);
+	} catch (error) {
+		logError(`Reminder mention action classification failed: ${error}`);
+		return { type: "none" };
 	}
-
-	if (CANCEL_WORD_REGEX.test(normalized)) {
-		const id = normalized.match(ID_REGEX)?.[1];
-		if (id) {
-			return { type: "cancel", id };
-		}
-	}
-
-	if (EDIT_WORD_REGEX.test(normalized)) {
-		const id = normalized.match(ID_REGEX)?.[1];
-		if (id) {
-			return {
-				type: "edit",
-				id,
-				text: removeReminderControlWords(normalized, id),
-			};
-		}
-		if (LATEST_REFERENCE_REGEX.test(normalized)) {
-			return {
-				type: "edit",
-				useLatest: true,
-				text: removeReminderControlWords(normalized),
-			};
-		}
-	}
-
-	return {
-		type: "create",
-		text: normalized.replace(REMINDER_WORD_REGEX, "").trim(),
-	};
 }
 
-function removeReminderControlWords(content: string, id?: string): string {
-	return content
-		.replace(REMINDER_WORD_REGEX, "")
-		.replace(LATEST_REFERENCE_REGEX, "")
-		.replace(id ?? /^$/u, "")
-		.replace(/`/g, "")
-		.replace(/^[\sのをに:：、,]+/u, "")
-		.replace(/[\sのをに:：、,]+$/u, "")
-		.trim();
+async function classifyReminderMentionAction(
+	content: string,
+): Promise<AiReminderMentionAction> {
+	const prompt = `あなたはDiscord botへのメンション文を、リマインダー操作に分類するルーターです。
+入力文がリマインダー、予約、予定通知に関する操作なら action を選び、関係なければ none にしてください。
+
+重要:
+- 出力はJSONオブジェクトのみ。Markdownや説明文は禁止。
+- 実際の登録、編集、削除は行わない。分類だけを行う。
+- 「今のリマインドは」「予約どうなってる」「登録中の予定は」など状態確認は list。
+- 「消して」「削除」「キャンセル」「取り消して」などは cancel。
+- 「変えて」「変更」「編集」「じゃなくて」「にして」などは edit。
+- 「さっきの」「先ほどの」「直近の」「最新の」「今の予約」は useLatest true。
+- 8文字前後以上の英数字IDがあれば id に入れる。バッククォートは除く。
+- create/edit の text は、後段パーサーに渡す自然文として必要な内容だけを残す。
+- edit で「9時じゃなくて5時にして」のような比較表現は、text にそのまま残す。
+- cancel/list では text は null。
+
+JSONスキーマ:
+{
+  "action": "none" | "list" | "cancel" | "edit" | "create",
+  "id": "ID文字列" | null,
+  "useLatest": boolean,
+  "text": "作成または編集に必要な自然文" | null,
+  "confidence": 0.0-1.0
+}
+
+入力:
+${JSON.stringify(content)}`;
+
+	const response = await generateAiTextWithUsage(prompt, {
+		maxCompletionTokens: 512,
+		reasoningEffort: "none",
+		temperature: 0,
+	});
+
+	return parseJsonObject(response.text);
+}
+
+function normalizeReminderMentionAction(
+	action: AiReminderMentionAction,
+): ReminderMentionAction {
+	if ((action.confidence ?? 0) < 0.55) {
+		return { type: "none" };
+	}
+
+	switch (action.action) {
+		case "list":
+			return { type: "list" };
+		case "cancel":
+			return {
+				type: "cancel",
+				id: normalizeOptionalText(action.id),
+				useLatest: Boolean(action.useLatest),
+			};
+		case "edit":
+			return {
+				type: "edit",
+				id: normalizeOptionalText(action.id),
+				useLatest: Boolean(action.useLatest),
+				text: normalizeOptionalText(action.text) ?? "",
+			};
+		case "create":
+			return {
+				type: "create",
+				text: normalizeOptionalText(action.text) ?? "",
+			};
+		default:
+			return { type: "none" };
+	}
+}
+
+function resolveReminderTarget(
+	action: { id?: string; useLatest?: boolean },
+	userId: string,
+	guildId: string | null,
+) {
+	if (action.id) {
+		return reminderService.findPendingForUser(action.id, userId, guildId);
+	}
+	if (action.useLatest) {
+		return (
+			reminderService.getLatestPendingForUser(userId, guildId) ?? "not_found"
+		);
+	}
+	return "not_found";
+}
+
+function normalizeOptionalText(
+	value: string | null | undefined,
+): string | undefined {
+	const normalized = value?.trim();
+	return normalized ? normalized : undefined;
+}
+
+function parseJsonObject(text: string): AiReminderMentionAction {
+	const trimmed = text.trim();
+	const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+	const candidate = fencedMatch?.[1] ?? trimmed;
+	const start = candidate.indexOf("{");
+	const end = candidate.lastIndexOf("}");
+
+	if (start === -1 || end === -1 || end <= start) {
+		throw new Error("AI response did not contain a JSON object");
+	}
+
+	return JSON.parse(candidate.slice(start, end + 1)) as AiReminderMentionAction;
 }
 
 function buildParseFailureMessage(reason: string, question?: string): string {
