@@ -8,13 +8,16 @@ import {
 } from "./reminderFormatter";
 import { parseReminderText } from "./reminderParser";
 
-const MENTION_TRIGGER_REGEX =
-	/^(?:remind|リマインド|リマインダー)\s*[:：]?\s*/iu;
 const ANY_REMINDER_TRIGGER_REGEX = /(?:remind|リマインド|リマインダー)/iu;
-const LIST_REGEX =
-	/^(?:(?:remind|リマインド|リマインダー)\s*)?(?:list|一覧)$/iu;
-const CANCEL_REGEX =
-	/^(?:(?:remind|リマインド|リマインダー)\s*)?(?:cancel|キャンセル|削除|取消)\s+`?([0-9a-f-]+)`?$/iu;
+const REMINDER_WORD_REGEX = /(?:remind|リマインド|リマインダー)/giu;
+const LIST_WORD_REGEX = /(?:list|リスト|一覧|確認|表示)/iu;
+const CANCEL_WORD_REGEX = /(?:cancel|キャンセル|削除|取消|取り消し)/iu;
+const ID_REGEX = /`?([0-9a-f]{4,}(?:-[0-9a-f-]+)?)`?/iu;
+
+type ReminderMentionAction =
+	| { type: "list" }
+	| { type: "cancel"; id: string }
+	| { type: "create"; text: string };
 
 export async function handleReminderMention(
 	message: Message,
@@ -32,7 +35,9 @@ export async function handleReminderMention(
 		return false;
 	}
 
-	if (LIST_REGEX.test(contentWithoutMention)) {
+	const action = detectReminderMentionAction(contentWithoutMention);
+
+	if (action.type === "list") {
 		const reminders = reminderService.listPendingForUser(
 			message.author.id,
 			message.guildId,
@@ -41,9 +46,8 @@ export async function handleReminderMention(
 		return true;
 	}
 
-	const cancelMatch = contentWithoutMention.match(CANCEL_REGEX);
-	if (cancelMatch) {
-		const id = cancelMatch[1];
+	if (action.type === "cancel") {
+		const id = action.id;
 		const result = await reminderService.cancelPendingForUser(
 			id,
 			message.author.id,
@@ -68,7 +72,7 @@ export async function handleReminderMention(
 		}
 	}
 
-	const reminderText = contentWithoutMention.replace(MENTION_TRIGGER_REGEX, "");
+	const reminderText = action.text;
 	if (!reminderText.trim()) {
 		await message.reply(
 			"リマインド内容を指定してください。例: `@bot remind 明日の9時に燃えるゴミ`",
@@ -106,6 +110,26 @@ export async function handleReminderMention(
 		await message.reply("リマインダー登録中にエラーが発生しました。");
 		return true;
 	}
+}
+
+function detectReminderMentionAction(content: string): ReminderMentionAction {
+	const normalized = content.trim();
+
+	if (LIST_WORD_REGEX.test(normalized)) {
+		return { type: "list" };
+	}
+
+	if (CANCEL_WORD_REGEX.test(normalized)) {
+		const id = normalized.match(ID_REGEX)?.[1];
+		if (id) {
+			return { type: "cancel", id };
+		}
+	}
+
+	return {
+		type: "create",
+		text: normalized.replace(REMINDER_WORD_REGEX, "").trim(),
+	};
 }
 
 function buildParseFailureMessage(reason: string, question?: string): string {
