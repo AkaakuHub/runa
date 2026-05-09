@@ -26,6 +26,22 @@ interface AiReminderParseResult {
 	question?: string | null;
 }
 
+interface ReminderEditContext {
+	remindAt: Date;
+	message: string;
+}
+
+interface ReminderEditParseSuccess {
+	ok: true;
+	remindAt?: Date;
+	message?: string;
+	confidence: number;
+}
+
+type ReminderEditParseResult =
+	| ReminderEditParseSuccess
+	| ReminderParseNeedsConfirmation;
+
 const JST_TIME_ZONE = "Asia/Tokyo";
 const MIN_CONFIDENCE = 0.7;
 const MAX_REMINDER_YEARS = 5;
@@ -75,6 +91,37 @@ export async function parseReminderText(
 			ok: false,
 			reason:
 				"日時の読み取りに失敗しました。例: `明日の9時に燃えるゴミ`、`30分後に洗濯物` のように指定してください。",
+		};
+	}
+}
+
+export async function parseReminderEditText(
+	input: string,
+	now: Date = new Date(),
+	context?: ReminderEditContext,
+): Promise<ReminderEditParseResult> {
+	const normalizedInput = input.trim();
+	const shouldKeepSeconds = hasExplicitSeconds(normalizedInput);
+	if (!normalizedInput) {
+		return {
+			ok: false,
+			reason: "変更内容を指定してください。",
+		};
+	}
+
+	try {
+		const aiResult = await parseReminderEditWithAi(
+			normalizedInput,
+			now,
+			context,
+		);
+		return validateAiEditResult(aiResult, now, shouldKeepSeconds);
+	} catch (error) {
+		logError(`Reminder edit AI parse failed: ${error}`);
+		return {
+			ok: false,
+			reason:
+				"変更内容の読み取りに失敗しました。例: `明日の9時に変更`、`内容を牛乳に変更` のように指定してください。",
 		};
 	}
 }
@@ -170,6 +217,62 @@ ${JSON.stringify(input)}`;
 	return parseJsonObject(response.text);
 }
 
+async function parseReminderEditWithAi(
+	input: string,
+	now: Date,
+	context?: ReminderEditContext,
+): Promise<AiReminderParseResult> {
+	const nowIso = now.toISOString();
+	const nowJst = formatReminderDateTime(now);
+	const currentReminderContext = context
+		? `\n現在のリマインダー:\n- 現在の日時: ${formatReminderDateTime(context.remindAt)}\n- 現在の本文: ${JSON.stringify(context.message)}\n`
+		: "";
+	const prompt = `あなたはDiscordリマインダー編集のパーサーです。
+ユーザー入力から、変更したい日時と通知本文を抽出してください。
+
+現在時刻:
+- UTC ISO: ${nowIso}
+- JST表示: ${nowJst}
+- タイムゾーン: Asia/Tokyo
+${currentReminderContext}
+
+ルール:
+- 出力はJSONオブジェクトのみ。Markdownや説明文は禁止。
+- 日時を変更する意図がある場合だけ remindAt を入れる。日時変更がなければ null。
+- 通知本文を変更する意図がある場合だけ message を入れる。本文変更がなければ null。
+- remindAt は ISO 8601 形式で、必ず Asia/Tokyo の +09:00 オフセットを含める。
+- ユーザーが秒を明示した場合はその秒を使う。秒の指定がない場合、秒とミリ秒は必ず 00 にする。
+- 日付だけで時刻が未指定の場合は、その日の 05:00 とする。
+- 現在のリマインダーが与えられていて、ユーザーが時刻だけを変更した場合は、現在のリマインダーの日付を維持する。
+- 現在のリマインダーが与えられていて、ユーザーが日付だけを変更した場合は、その日の 05:00 とする。
+- 「朝」は 05:00、「昼」は 12:00、「夕方」は 18:00、「夜」は 21:00 とする。
+- 「9時じゃなくて5時」「9時ではなく5時」は時刻を 05:00 に変更する意味として扱う。
+- 「内容をXに変更」「本文はX」「メッセージをX」などは message に X だけを入れる。
+- 「明日に変更」「9時に変更」など、本文がない日時変更では message は null。
+- 日時も本文も読み取れない場合は needsConfirmation を true にする。
+- 過去日時を指定しない。過去になりそうな日付は次に来る未来の日時として解釈する。
+
+JSONスキーマ:
+{
+  "remindAt": "YYYY-MM-DDTHH:mm:ss+09:00" | null,
+  "message": "新しい通知本文" | null,
+  "confidence": 0.0-1.0,
+  "needsConfirmation": boolean,
+  "question": "確認質問" | null
+}
+
+ユーザー入力:
+${JSON.stringify(input)}`;
+
+	const response = await generateAiTextWithUsage(prompt, {
+		maxCompletionTokens: 512,
+		reasoningEffort: "none",
+		temperature: 0,
+	});
+
+	return parseJsonObject(response.text);
+}
+
 function validateAiResult(
 	result: AiReminderParseResult,
 	now: Date,
@@ -235,6 +338,76 @@ function validateAiResult(
 		return {
 			ok: false,
 			reason: `${MAX_REMINDER_YEARS}年以内の日時を指定してください。`,
+		};
+	}
+
+	return {
+		ok: true,
+		remindAt,
+		message,
+		confidence,
+	};
+}
+
+function validateAiEditResult(
+	result: AiReminderParseResult,
+	now: Date,
+	shouldKeepSeconds: boolean,
+): ReminderEditParseResult {
+	const confidence =
+		typeof result.confidence === "number" ? result.confidence : 0;
+
+	if (result.needsConfirmation) {
+		return {
+			ok: false,
+			reason: "変更内容が曖昧です。",
+			question: result.question ?? undefined,
+		};
+	}
+
+	const remindAt = result.remindAt ? new Date(result.remindAt) : undefined;
+	if (remindAt) {
+		normalizeReminderDate(remindAt, shouldKeepSeconds);
+		if (Number.isNaN(remindAt.getTime())) {
+			return {
+				ok: false,
+				reason: "日時の形式を読み取れませんでした。",
+			};
+		}
+		if (remindAt.getTime() <= now.getTime()) {
+			return {
+				ok: false,
+				reason: "未来の日時を指定してください。",
+			};
+		}
+		const maxReminderAt = new Date(now.getTime());
+		maxReminderAt.setFullYear(maxReminderAt.getFullYear() + MAX_REMINDER_YEARS);
+		if (remindAt.getTime() > maxReminderAt.getTime()) {
+			return {
+				ok: false,
+				reason: `${MAX_REMINDER_YEARS}年以内の日時を指定してください。`,
+			};
+		}
+	}
+
+	const message = result.message
+		? cleanupReminderMessage(result.message)
+		: undefined;
+
+	if (!remindAt && !message) {
+		return {
+			ok: false,
+			reason: "変更する日時または内容を読み取れませんでした。",
+		};
+	}
+
+	if (confidence < MIN_CONFIDENCE) {
+		return {
+			ok: false,
+			reason: "変更内容の解釈に自信がありません。",
+			question:
+				result.question ??
+				"変更内容をもう少し具体的に指定してください。例: 明日の9時に変更",
 		};
 	}
 

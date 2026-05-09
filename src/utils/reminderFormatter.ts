@@ -30,3 +30,8 @@ export function buildReminderListMessage(reminders: Reminder[]): string {
 export function buildReminderCanceledMessage(idPrefix: string): string {
 	return `リマインダー \`${idPrefix}\` をキャンセルしました。`;
 }
+
+export function buildReminderEditedMessage(reminder: Reminder): string {
+	const remindAt = formatReminderDateTime(new Date(reminder.remindAt));
+	return `リマインダー \`${formatReminderId(reminder)}\` を更新しました。\n${remindAt} に「${reminder.message}」をリマインドします！`;
+}

@@ -14,6 +14,7 @@ export interface Reminder {
 	message: string;
 	source: ReminderSource;
 	createdAt: string;
+	updatedAt?: string;
 	deliveredAt?: string;
 	canceledAt?: string;
 }
@@ -25,6 +26,11 @@ interface CreateReminderParams {
 	remindAt: Date;
 	message: string;
 	source: ReminderSource;
+}
+
+interface EditReminderParams {
+	remindAt?: Date;
+	message?: string;
 }
 
 class ReminderService {
@@ -79,12 +85,21 @@ class ReminderService {
 			);
 	}
 
-	async cancelPendingForUser(
+	getLatestPendingForUser(
+		userId: string,
+		guildId: string | null,
+	): Reminder | undefined {
+		return this.listPendingForUser(userId, guildId).sort(
+			(a, b) =>
+				new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+		)[0];
+	}
+
+	findPendingForUser(
 		idPrefix: string,
 		userId: string,
 		guildId: string | null,
-		canceledAt: Date = new Date(),
-	): Promise<"canceled" | "not_found" | "ambiguous"> {
+	): "not_found" | "ambiguous" | Reminder {
 		const normalizedPrefix = idPrefix.trim().toLowerCase();
 		if (!normalizedPrefix) return "not_found";
 
@@ -94,10 +109,50 @@ class ReminderService {
 
 		if (matches.length === 0) return "not_found";
 		if (matches.length > 1) return "ambiguous";
+		return matches[0];
+	}
 
-		matches[0].canceledAt = canceledAt.toISOString();
+	async cancelPendingForUser(
+		idPrefix: string,
+		userId: string,
+		guildId: string | null,
+		canceledAt: Date = new Date(),
+	): Promise<"canceled" | "not_found" | "ambiguous"> {
+		const reminder = this.findPendingForUser(idPrefix, userId, guildId);
+
+		if (reminder === "not_found") return "not_found";
+		if (reminder === "ambiguous") return "ambiguous";
+
+		reminder.canceledAt = canceledAt.toISOString();
 		await this.save();
 		return "canceled";
+	}
+
+	async editPendingForUser(
+		idPrefix: string,
+		userId: string,
+		guildId: string | null,
+		params: EditReminderParams,
+		updatedAt: Date = new Date(),
+	): Promise<
+		| { status: "edited"; reminder: Reminder }
+		| { status: "not_found" }
+		| { status: "ambiguous" }
+	> {
+		const reminder = this.findPendingForUser(idPrefix, userId, guildId);
+
+		if (reminder === "not_found") return { status: "not_found" };
+		if (reminder === "ambiguous") return { status: "ambiguous" };
+		if (params.remindAt) {
+			reminder.remindAt = params.remindAt.toISOString();
+		}
+		if (params.message) {
+			reminder.message = params.message;
+		}
+		reminder.updatedAt = updatedAt.toISOString();
+		await this.save();
+
+		return { status: "edited", reminder };
 	}
 
 	async markDelivered(
