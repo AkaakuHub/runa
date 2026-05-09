@@ -5,6 +5,8 @@ import { logError } from "../utils/logger";
 
 type ReminderSource = "slash" | "mention";
 
+export const MAX_PENDING_REMINDERS_PER_USER = 50;
+
 export interface Reminder {
 	id: string;
 	guildId: string | null;
@@ -46,7 +48,18 @@ class ReminderService {
 		this.reminders = readJsonFileSync<Reminder[]>(this.filePath, []);
 	}
 
-	create(params: CreateReminderParams): Promise<Reminder> {
+	create(
+		params: CreateReminderParams,
+	): Promise<
+		{ status: "created"; reminder: Reminder } | { status: "limit_exceeded" }
+	> {
+		if (
+			this.listPendingForUser(params.userId, params.guildId).length >=
+			MAX_PENDING_REMINDERS_PER_USER
+		) {
+			return Promise.resolve({ status: "limit_exceeded" });
+		}
+
 		const reminder: Reminder = {
 			id: randomUUID(),
 			guildId: params.guildId,
@@ -59,7 +72,7 @@ class ReminderService {
 		};
 
 		this.reminders.push(reminder);
-		return this.save().then(() => reminder);
+		return this.save().then(() => ({ status: "created", reminder }));
 	}
 
 	getDueReminders(now: Date = new Date()): Reminder[] {

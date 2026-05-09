@@ -1,5 +1,8 @@
 import type { Message } from "discord.js";
-import { reminderService } from "../services/ReminderService";
+import {
+	MAX_PENDING_REMINDERS_PER_USER,
+	reminderService,
+} from "../services/ReminderService";
 import { logError, logInfo } from "./logger";
 import {
 	buildReminderCanceledMessage,
@@ -172,7 +175,7 @@ export async function handleReminderMention(
 			return true;
 		}
 
-		await reminderService.create({
+		const createResult = await reminderService.create({
 			guildId: message.guildId,
 			channelId: message.channelId,
 			userId: message.author.id,
@@ -180,6 +183,13 @@ export async function handleReminderMention(
 			message: parsed.message,
 			source: "mention",
 		});
+
+		if (createResult.status === "limit_exceeded") {
+			await message.reply(
+				`未完了のリマインダーは1人${MAX_PENDING_REMINDERS_PER_USER}件までです。不要なリマインダーをキャンセルしてください。`,
+			);
+			return true;
+		}
 
 		await message.reply(
 			buildReminderRegisteredMessage(parsed.remindAt, parsed.message),

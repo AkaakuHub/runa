@@ -160,6 +160,11 @@ export function setupReminderScheduler(client: Client): void {
 
 					await channel.send({
 						content: `<@${reminder.userId}> リマインダーです: ${reminder.message}`,
+						allowedMentions: {
+							parse: [],
+							roles: [],
+							users: [reminder.userId],
+						},
 					});
 					await reminderService.markDelivered(reminder.id);
 					logInfo(`Reminder delivered: ${reminder.id}`);

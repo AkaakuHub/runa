@@ -1,5 +1,8 @@
 import { type ChatInputCommandInteraction, MessageFlags } from "discord.js";
-import { reminderService } from "../../services/ReminderService";
+import {
+	MAX_PENDING_REMINDERS_PER_USER,
+	reminderService,
+} from "../../services/ReminderService";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { buildReminderRegisteredMessage } from "../../utils/reminderFormatter";
@@ -32,7 +35,7 @@ export const ReminderCommand: CommandDefinition = {
 				return;
 			}
 
-			await reminderService.create({
+			const createResult = await reminderService.create({
 				guildId: interaction.guildId,
 				channelId: interaction.channelId,
 				userId: interaction.user.id,
@@ -40,6 +43,13 @@ export const ReminderCommand: CommandDefinition = {
 				message: parsed.message,
 				source: "slash",
 			});
+
+			if (createResult.status === "limit_exceeded") {
+				await interaction.editReply({
+					content: `未完了のリマインダーは1人${MAX_PENDING_REMINDERS_PER_USER}件までです。不要なリマインダーをキャンセルしてください。`,
+				});
+				return;
+			}
 
 			await interaction.editReply({
 				content: buildReminderRegisteredMessage(
