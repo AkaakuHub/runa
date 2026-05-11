@@ -10,7 +10,7 @@ import { IyaResponse } from "../response/Iya";
 import { MusicService } from "../services/MusicService";
 import type { IYAKind } from "../types";
 import { logDebug, logError, logInfo } from "../utils/logger";
-import { handleReminderMention } from "../utils/reminderMessageHandler";
+import { handleMentionMessage } from "../utils/mentionMessageHandler";
 import { detectSenryu } from "../utils/senryuDetector";
 import { buildSenryuReply, generateSenryuImage } from "../utils/senryuResponse";
 import { handleTTS } from "../utils/useTTS";
@@ -39,8 +39,8 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	// TTS機能の処理
 	await handleTTS(message);
 
-	const handledReminder = await handleReminderMention(message);
-	if (handledReminder) {
+	const handledMention = await handleMentionMessage(message);
+	if (handledMention) {
 		return;
 	}
 
