@@ -1,5 +1,5 @@
 import type { Message } from "discord.js";
-import { generateChatResponse } from "./chatResponse";
+import { CHAT_PROGRESS_MESSAGE, generateChatResponse } from "./chatResponse";
 import { logError } from "./logger";
 import { classifyMentionIntent } from "./mentionIntentClassifier";
 import { editAndSendLongMessage } from "./messageUtils";
@@ -18,9 +18,9 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 		.replace(new RegExp(`<@!?${botUser.id}>`, "g"), "")
 		.trim();
 
-	const thinkingReply = await message.reply("考え中...");
+	const responseMessage = await message.reply(CHAT_PROGRESS_MESSAGE);
 	const reply = async (content: string): Promise<void> => {
-		await editAndSendLongMessage(thinkingReply, content);
+		await editAndSendLongMessage(responseMessage, content);
 	};
 
 	if (!contentWithoutMention) {
