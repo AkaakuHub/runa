@@ -16,11 +16,29 @@ const resolvedLogLevel: AppLogLevel = (
 	allowedLogLevels.includes(envLogLevel as AppLogLevel) ? envLogLevel : "warn"
 ) as AppLogLevel;
 
+const formatJstTimestamp = (): string => {
+	const now = new Date();
+	const parts = new Intl.DateTimeFormat("sv-SE", {
+		timeZone: "Asia/Tokyo",
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		hour12: false,
+	}).formatToParts(now);
+	const byType = new Map(parts.map((part) => [part.type, part.value]));
+	const milliseconds = now.getMilliseconds().toString().padStart(3, "0");
+
+	return `${byType.get("year")}-${byType.get("month")}-${byType.get("day")} ${byType.get("hour")}:${byType.get("minute")}:${byType.get("second")}.${milliseconds} JST`;
+};
+
 const logger = createLogger({
 	levels: levelPriority,
 	level: resolvedLogLevel,
 	format: format.combine(
-		format.timestamp(),
+		format.timestamp({ format: formatJstTimestamp }),
 		format.printf(({ timestamp, level, message }) => {
 			return `${timestamp} [${level}]: ${message}`;
 		}),
