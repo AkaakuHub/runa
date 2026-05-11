@@ -135,3 +135,37 @@ export async function editAndSendLongMessage(
 		}
 	}
 }
+
+/**
+ * 元メッセージに返信し、返信元が消えている場合は同じチャンネルに送信する
+ * @param message 返信元メッセージ
+ * @param content 送信するメッセージ内容
+ * @returns 最初に送信したメッセージ
+ */
+export async function replyOrSendLongMessage(
+	message: Message,
+	content: string,
+): Promise<Message> {
+	const chunks = splitMessage(
+		content || "うまく言葉が出ませんでした。",
+		DISCORD_CHUNK_LIMIT,
+	);
+
+	let sentMessage: Message;
+	try {
+		sentMessage = await message.reply(chunks[0]);
+	} catch {
+		if (!("send" in message.channel)) {
+			throw new Error("Channel does not support sending messages");
+		}
+		sentMessage = await message.channel.send(chunks[0]);
+	}
+
+	for (let i = 1; i < chunks.length; i++) {
+		if ("send" in message.channel) {
+			await message.channel.send(chunks[i]);
+		}
+	}
+
+	return sentMessage;
+}

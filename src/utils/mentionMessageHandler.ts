@@ -2,7 +2,7 @@ import type { Message } from "discord.js";
 import { generateChatResponse } from "./chatResponse";
 import { logError } from "./logger";
 import { classifyMentionIntent } from "./mentionIntentClassifier";
-import { editAndSendLongMessage } from "./messageUtils";
+import { editAndSendLongMessage, replyOrSendLongMessage } from "./messageUtils";
 import { handleReminderMentionAction } from "./reminderMessageHandler";
 
 const GENERAL_MENTION_SYSTEM_PROMPT =
@@ -18,25 +18,28 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 		.replace(new RegExp(`<@!?${botUser.id}>`, "g"), "")
 		.trim();
 
-	if ("sendTyping" in message.channel) {
-		await message.channel.sendTyping();
-	}
+	const stopTyping = startTyping(message);
 
 	let responseMessage: Message | null = null;
 	const reply = async (content: string): Promise<void> => {
 		if (!responseMessage) {
-			responseMessage = await message.reply(content);
+			responseMessage = await replyOrSendLongMessage(message, content);
 			return;
 		}
-		await editAndSendLongMessage(responseMessage, content);
+		try {
+			await editAndSendLongMessage(responseMessage, content);
+		} catch (error) {
+			logError(`Failed to edit mention response message: ${error}`);
+			responseMessage = await replyOrSendLongMessage(message, content);
+		}
 	};
 
-	if (!contentWithoutMention) {
-		await reply("呼びました？");
-		return true;
-	}
-
 	try {
+		if (!contentWithoutMention) {
+			await reply("呼びました？");
+			return true;
+		}
+
 		const intent = await classifyMentionIntent(contentWithoutMention);
 		if (intent.type === "reminder") {
 			await handleReminderMentionAction(message, intent.action, reply);
@@ -52,5 +55,24 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 		logError(`Error handling mention message: ${error}`);
 		await reply("反応はできていますが、返答生成で失敗しました。");
 		return true;
+	} finally {
+		stopTyping();
 	}
+}
+
+function startTyping(message: Message): () => void {
+	const { channel } = message;
+	if (!("sendTyping" in channel)) {
+		return () => {};
+	}
+
+	const sendTyping = () => {
+		channel
+			.sendTyping()
+			.catch((error) => logError(`Failed to send typing indicator: ${error}`));
+	};
+
+	sendTyping();
+	const interval = setInterval(sendTyping, 8000);
+	return () => clearInterval(interval);
 }
