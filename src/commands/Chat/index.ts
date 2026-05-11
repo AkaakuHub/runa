@@ -1,9 +1,9 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import type { CommandDefinition } from "../../types";
+import { generateChatResponse } from "../../utils/chatResponse";
 import { checkCommandCooldown } from "../../utils/commandCooldown";
 import { logError } from "../../utils/logger";
 import { editAndFollowUpLongMessage } from "../../utils/messageUtils";
-import { chatWithAssistant } from "../../utils/useAI";
 
 const CHAT_COOLDOWN_MS = 0;
 
@@ -35,7 +35,11 @@ export const ChatCommand: CommandDefinition = {
 
 			const message = interaction.options.getString("message", true);
 
-			const response = await performChat(interaction, message);
+			const response = await generateChatResponse(message, {
+				onProgress: async (content) => {
+					await interaction.editReply({ content });
+				},
+			});
 
 			// 少し遅延を入れて進捗表示が確実に更新されるようにする
 			await new Promise((resolve) => setTimeout(resolve, 500));
@@ -52,32 +56,3 @@ export const ChatCommand: CommandDefinition = {
 		}
 	},
 };
-
-async function performChat(
-	interaction: ChatInputCommandInteraction,
-	message: string,
-): Promise<string> {
-	try {
-		// 進捗表示を更新
-		await interaction.editReply({
-			content: "回答を生成中...",
-		});
-
-		// チャット用のシステムプロンプト
-		const systemPrompt =
-			"あなたは親切で有用なAIアシスタントです。以下のユーザーのメッセージに丁寧に回答してください。否定だけの返答はしないでください。応答は、特に指示のない限り、日本語で行ってください。";
-
-		const response = await chatWithAssistant(message, systemPrompt);
-
-		// 回答を整形
-		const formattedResponse = `
-> ${message}
-
-${response}`;
-
-		return formattedResponse;
-	} catch (error) {
-		logError(`Error performing chat: ${error}`);
-		throw error;
-	}
-}

@@ -1,8 +1,9 @@
 import type { Message } from "discord.js";
-import { classifyMentionIntent } from "./mentionIntentClassifier";
-import { handleReminderMentionAction } from "./reminderMessageHandler";
-import { chatWithAssistant } from "./useAI";
+import { generateChatResponse } from "./chatResponse";
 import { logError } from "./logger";
+import { classifyMentionIntent } from "./mentionIntentClassifier";
+import { editAndSendLongMessage } from "./messageUtils";
+import { handleReminderMentionAction } from "./reminderMessageHandler";
 
 const GENERAL_MENTION_SYSTEM_PROMPT =
 	"あなたはDiscord botです。メンションされたユーザーに、日本語で自然に短く返答してください。リマインダー登録の完了を装わないでください。必要なら1〜3文で答えてください。";
@@ -19,7 +20,7 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 
 	const thinkingReply = await message.reply("考え中...");
 	const reply = async (content: string): Promise<void> => {
-		await thinkingReply.edit(content);
+		await editAndSendLongMessage(thinkingReply, content);
 	};
 
 	if (!contentWithoutMention) {
@@ -34,10 +35,10 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 			return true;
 		}
 
-		const response = await chatWithAssistant(
-			contentWithoutMention,
-			GENERAL_MENTION_SYSTEM_PROMPT,
-		);
+		const response = await generateChatResponse(contentWithoutMention, {
+			systemPrompt: GENERAL_MENTION_SYSTEM_PROMPT,
+			onProgress: reply,
+		});
 		await reply(response.trim() || "うまく言葉が出ませんでした。");
 		return true;
 	} catch (error) {

@@ -1,4 +1,8 @@
-import { type ChatInputCommandInteraction, MessageFlags } from "discord.js";
+import {
+	type ChatInputCommandInteraction,
+	type Message,
+	MessageFlags,
+} from "discord.js";
 
 /**
  * Discordの2000文字制限を考慮してメッセージを分割するユーティリティ
@@ -106,5 +110,28 @@ export async function editAndFollowUpLongMessage(
 			content: chunks[i],
 			flags: isEphemeral ? MessageFlags.Ephemeral : undefined,
 		});
+	}
+}
+
+/**
+ * メッセージを編集して最初のチャンクを送信し、残りを同じチャンネルに送信する
+ * @param message 編集対象のメッセージ
+ * @param content 送信するメッセージ内容
+ * @returns Promise<void>
+ */
+export async function editAndSendLongMessage(
+	message: Message,
+	content: string,
+): Promise<void> {
+	const chunks = splitMessage(content, DISCORD_CHUNK_LIMIT);
+
+	if (chunks.length === 0) return;
+
+	await message.edit(chunks[0]);
+
+	for (let i = 1; i < chunks.length; i++) {
+		if ("send" in message.channel) {
+			await message.channel.send(chunks[i]);
+		}
 	}
 }
