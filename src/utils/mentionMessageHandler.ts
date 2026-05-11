@@ -45,7 +45,6 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 
 		const response = await generateChatResponse(contentWithoutMention, {
 			systemPrompt: GENERAL_MENTION_SYSTEM_PROMPT,
-			onProgress: reply,
 		});
 		await reply(response.trim() || "うまく言葉が出ませんでした。");
 		return true;
