@@ -21,6 +21,23 @@ interface AiMentionIntent {
 }
 
 const MIN_CONFIDENCE = 0.55;
+const MENTION_INTENT_SCHEMA = {
+	type: "object",
+	properties: {
+		intent: { type: "string", enum: ["general", "reminder"] },
+		action: {
+			type: "string",
+			enum: ["list", "cancel", "edit", "create", "none"],
+		},
+		id: { type: "string" },
+		useLatest: { type: "boolean" },
+		text: { type: "string" },
+		response: { type: "string" },
+		confidence: { type: "number" },
+	},
+	required: ["intent", "action", "useLatest", "text", "response", "confidence"],
+	additionalProperties: false,
+};
 
 export async function classifyMentionIntent(
 	content: string,
@@ -63,6 +80,8 @@ ${JSON.stringify(content)}`;
 		maxCompletionTokens: 512,
 		reasoningEffort: "none",
 		temperature: 0,
+		responseMimeType: "application/json",
+		responseJsonSchema: MENTION_INTENT_SCHEMA,
 	});
 
 	return parseJsonObject(response.text);

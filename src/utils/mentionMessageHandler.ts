@@ -1,5 +1,5 @@
 import type { Message } from "discord.js";
-import { logError } from "./logger";
+import { logError, logInfo } from "./logger";
 import { classifyMentionIntent } from "./mentionIntentClassifier";
 import { editAndSendLongMessage, replyOrSendLongMessage } from "./messageUtils";
 import { handleReminderMentionAction } from "./reminderMessageHandler";
@@ -13,6 +13,10 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 	const contentWithoutMention = removeBotMention(message.content, botUser.id);
 
 	const stopTyping = startTyping(message);
+	const startedAt = Date.now();
+	logInfo(
+		`Mention handling started: guild=${message.guildId ?? "dm"} channel=${message.channelId} author=${message.author.id}`,
+	);
 
 	let responseMessage: Message | null = null;
 	const reply = async (content: string): Promise<void> => {
@@ -35,16 +39,25 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 		}
 
 		const intent = await classifyMentionIntent(contentWithoutMention);
+		logInfo(
+			`Mention intent classified: type=${intent.type} elapsed=${Date.now() - startedAt}ms`,
+		);
 		if (intent.type === "reminder") {
 			await handleReminderMentionAction(message, intent.action, reply);
+			logInfo(`Mention reminder handled: elapsed=${Date.now() - startedAt}ms`);
 			return true;
 		}
 
 		await reply(intent.response);
+		logInfo(`Mention general replied: elapsed=${Date.now() - startedAt}ms`);
 		return true;
 	} catch (error) {
 		logError(`Error handling mention message: ${error}`);
-		await reply("反応はできていますが、返答生成で失敗しました。");
+		try {
+			await reply("反応はできていますが、返答生成で失敗しました。");
+		} catch (replyError) {
+			logError(`Failed to send mention error response: ${replyError}`);
+		}
 		return true;
 	} finally {
 		stopTyping();

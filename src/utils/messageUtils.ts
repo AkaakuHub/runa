@@ -3,6 +3,7 @@ import {
 	type Message,
 	MessageFlags,
 } from "discord.js";
+import { logError } from "./logger";
 
 /**
  * Discordの2000文字制限を考慮してメッセージを分割するユーティリティ
@@ -154,11 +155,17 @@ export async function replyOrSendLongMessage(
 	let sentMessage: Message;
 	try {
 		sentMessage = await message.reply(chunks[0]);
-	} catch {
+	} catch (replyError) {
+		logError(`Failed to reply to message, sending to channel: ${replyError}`);
 		if (!("send" in message.channel)) {
 			throw new Error("Channel does not support sending messages");
 		}
-		sentMessage = await message.channel.send(chunks[0]);
+		try {
+			sentMessage = await message.channel.send(chunks[0]);
+		} catch (sendError) {
+			logError(`Failed to send message to channel: ${sendError}`);
+			throw sendError;
+		}
 	}
 
 	for (let i = 1; i < chunks.length; i++) {

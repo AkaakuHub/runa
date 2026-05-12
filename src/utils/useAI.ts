@@ -15,6 +15,8 @@ interface GenerateTextOptions {
 	maxCompletionTokens?: number;
 	reasoningEffort?: ReasoningEffort;
 	temperature?: number;
+	responseMimeType?: string;
+	responseJsonSchema?: unknown;
 }
 
 interface AiUsage {
@@ -140,6 +142,8 @@ class AiClient {
 			config: {
 				maxOutputTokens: options?.maxCompletionTokens,
 				temperature: options?.temperature,
+				responseMimeType: options?.responseMimeType,
+				responseJsonSchema: options?.responseJsonSchema,
 				thinkingConfig:
 					options?.reasoningEffort === "none"
 						? {
