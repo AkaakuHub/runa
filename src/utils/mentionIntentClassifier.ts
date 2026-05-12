@@ -7,7 +7,7 @@ export type ReminderMentionAction =
 	| { type: "create"; text: string };
 
 type MentionIntent =
-	| { type: "general" }
+	| { type: "general"; response: string }
 	| { type: "reminder"; action: ReminderMentionAction };
 
 interface AiMentionIntent {
@@ -16,6 +16,7 @@ interface AiMentionIntent {
 	id?: string | null;
 	useLatest?: boolean;
 	text?: string | null;
+	response?: string | null;
 	confidence?: number;
 }
 
@@ -31,21 +32,18 @@ export async function classifyMentionIntent(
 async function classifyMentionIntentWithAi(
 	content: string,
 ): Promise<AiMentionIntent> {
-	const prompt = `あなたはDiscord botへのメンション文を分類するルーターです。
-入力がリマインダー、予約、予定通知に関する操作なら reminder、それ以外の会話や質問なら general にしてください。
+	const prompt = `あなたはDiscord botへのメンションを処理するルーターです。
+入力がリマインダー機能の操作なら reminder、それ以外なら general にしてください。
 
 重要:
 - 出力はJSONオブジェクトのみ。Markdownや説明文は禁止。
-- 実際の登録、編集、削除、返答生成は行わない。分類だけを行う。
-- リマインダー操作だけ reminder にする。雑談、質問、挨拶、相談は general。
-- 「今のリマインドは」「予約どうなってる」「登録中の予定は」など状態確認は list。
-- 「消して」「削除」「キャンセル」「取り消して」などは cancel。
-- 「変えて」「変更」「編集」「じゃなくて」「にして」などは edit。
-- 「さっきの」「先ほどの」「直近の」「最新の」「今の予約」は useLatest true。
-- 8文字前後以上の英数字IDがあれば id に入れる。バッククォートは除く。
-- create/edit の text は、後段パーサーに渡す自然文として必要な内容だけを残す。
-- edit で「9時じゃなくて5時にして」のような比較表現は、text にそのまま残す。
-- cancel/list/general では text は null。
+- reminder の場合は、実行したい操作を action に入れる。
+- reminder の action は create/list/cancel/edit のいずれかにする。
+- id が明示されていれば id に入れる。
+- 直近の対象を指す文脈なら useLatest を true にする。
+- create/edit の text は、後段のリマインダーパーサーに渡す自然文として必要な内容だけを残す。
+- general の場合は action/id/text を null にし、response に日本語の自然な短い返答を入れる。
+- general の response は、リマインダー登録や変更が完了したように書かない。
 
 JSONスキーマ:
 {
@@ -54,6 +52,7 @@ JSONスキーマ:
   "id": "ID文字列" | null,
   "useLatest": boolean,
   "text": "作成または編集に必要な自然文" | null,
+  "response": "generalの場合の返答" | null,
   "confidence": 0.0-1.0
 }
 
@@ -70,12 +69,15 @@ ${JSON.stringify(content)}`;
 }
 
 function normalizeMentionIntent(intent: AiMentionIntent): MentionIntent {
+	const generalResponse =
+		normalizeOptionalText(intent.response) ?? "うまく言葉が出ませんでした。";
+
 	if ((intent.confidence ?? 0) < MIN_CONFIDENCE) {
-		return { type: "general" };
+		return { type: "general", response: generalResponse };
 	}
 
 	if (intent.intent !== "reminder") {
-		return { type: "general" };
+		return { type: "general", response: generalResponse };
 	}
 
 	switch (intent.action) {
@@ -109,7 +111,7 @@ function normalizeMentionIntent(intent: AiMentionIntent): MentionIntent {
 				},
 			};
 		default:
-			return { type: "general" };
+			return { type: "general", response: generalResponse };
 	}
 }
 
