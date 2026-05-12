@@ -1,4 +1,4 @@
-import { generateAiTextWithUsage } from "./useAI";
+import { generateAiTextWithUsage, getLightAiModel } from "./useAI";
 
 export type ReminderMentionAction =
 	| { type: "list" }
@@ -83,6 +83,7 @@ ${JSON.stringify(content)}`;
 		responseMimeType: "application/json",
 		responseJsonSchema: MENTION_INTENT_SCHEMA,
 		maxRetries: 1,
+		model: getLightAiModel(),
 	});
 
 	return parseJsonObject(response.text);

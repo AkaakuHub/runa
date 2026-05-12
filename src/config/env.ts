@@ -9,6 +9,8 @@ interface EnvConfig {
 
 	// Google AI関連
 	GOOGLE_API_KEY: string;
+	GOOGLE_AI_DEFAULT_MODEL?: string;
+	GOOGLE_AI_LIGHT_MODEL?: string;
 	GROQ_API_KEY: string;
 
 	// その他
@@ -27,6 +29,8 @@ export function getEnvConfig(): EnvConfig {
 		CLIENT_ID,
 		GUILD_ID,
 		GOOGLE_API_KEY,
+		GOOGLE_AI_DEFAULT_MODEL,
+		GOOGLE_AI_LIGHT_MODEL,
 		GROQ_API_KEY,
 		NG_WORDS,
 		SUDACHI_PYTHON_PATH,
@@ -66,6 +70,8 @@ export function getEnvConfig(): EnvConfig {
 		CLIENT_ID: CLIENT_ID as string,
 		GUILD_ID: GUILD_ID as string,
 		GOOGLE_API_KEY: GOOGLE_API_KEY as string,
+		GOOGLE_AI_DEFAULT_MODEL,
+		GOOGLE_AI_LIGHT_MODEL,
 		GROQ_API_KEY: GROQ_API_KEY as string,
 		NG_WORDS: ngWords,
 		SUDACHI_PYTHON_PATH: SUDACHI_PYTHON_PATH || "sudachi/.venv/bin/python3",

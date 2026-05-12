@@ -7,6 +7,7 @@ type ReasoningEffort = "none" | "default" | "low" | "medium" | "high";
 interface AiConfig {
 	apiKey?: string;
 	defaultModel?: string;
+	lightModel?: string;
 	maxRetries?: number;
 	baseDelay?: number;
 }
@@ -18,6 +19,7 @@ interface GenerateTextOptions {
 	responseMimeType?: string;
 	responseJsonSchema?: unknown;
 	maxRetries?: number;
+	model?: string;
 }
 
 interface AiUsage {
@@ -32,7 +34,8 @@ class AiClient {
 	private config: Required<AiConfig>;
 
 	constructor(config: AiConfig = {}) {
-		const apiKey = config.apiKey || getEnvConfig().GOOGLE_API_KEY;
+		const envConfig = getEnvConfig();
+		const apiKey = config.apiKey || envConfig.GOOGLE_API_KEY;
 		if (!apiKey) {
 			throw new Error(
 				"Google AI API key not found. Please set GOOGLE_API_KEY environment variable.",
@@ -42,7 +45,14 @@ class AiClient {
 		this.client = new GoogleGenAI({ apiKey });
 		this.config = {
 			apiKey,
-			defaultModel: config.defaultModel || "gemini-3-flash-preview",
+			defaultModel:
+				config.defaultModel ||
+				envConfig.GOOGLE_AI_DEFAULT_MODEL ||
+				"gemini-3-flash-preview",
+			lightModel:
+				config.lightModel ||
+				envConfig.GOOGLE_AI_LIGHT_MODEL ||
+				"gemini-2.5-flash-lite",
 			maxRetries: config.maxRetries || 3,
 			baseDelay: config.baseDelay || 1000,
 		};
@@ -197,14 +207,11 @@ class AiClient {
 		let lastError: unknown;
 
 		const maxRetries = options?.maxRetries ?? this.config.maxRetries;
+		const model = options?.model ?? this.config.defaultModel;
 
 		for (let attempt = 1; attempt <= maxRetries; attempt++) {
 			try {
-				const response = await this.generateContent(
-					prompt,
-					this.config.defaultModel,
-					options,
-				);
+				const response = await this.generateContent(prompt, model, options);
 				const usage = response.usageMetadata
 					? {
 							prompt_tokens: response.usageMetadata.promptTokenCount,
@@ -220,21 +227,19 @@ class AiClient {
 
 				if (usage) {
 					logInfo(
-						`Gemini usage (${this.config.defaultModel}) - prompt: ${usage.prompt_tokens}, completion: ${usage.completion_tokens}, thoughts: ${usage.thoughts_tokens ?? 0}, total: ${usage.total_tokens}`,
+						`Gemini usage (${model}) - prompt: ${usage.prompt_tokens}, completion: ${usage.completion_tokens}, thoughts: ${usage.thoughts_tokens ?? 0}, total: ${usage.total_tokens}`,
 					);
 				}
 				if (!text.trim()) {
 					logInfo(
-						`Gemini returned empty visible text (model: ${this.config.defaultModel}, finish_reason: ${finishReason})`,
+						`Gemini returned empty visible text (model: ${model}, finish_reason: ${finishReason})`,
 					);
 				}
 
 				return { text, finishReason, usage };
 			} catch (error: unknown) {
 				lastError = error;
-				logError(
-					`Attempt ${attempt} with ${this.config.defaultModel} failed: ${error}`,
-				);
+				logError(`Attempt ${attempt} with ${model} failed: ${error}`);
 
 				const waited = await this.waitBeforeRetry(error, attempt, maxRetries);
 				if (!waited) {
@@ -249,12 +254,22 @@ class AiClient {
 	/**
 	 * チャット用のプロンプトを生成して実行
 	 */
-	async chat(message: string, systemPrompt?: string): Promise<string> {
+	async chat(
+		message: string,
+		systemPrompt?: string,
+		options?: GenerateTextOptions,
+	): Promise<string> {
 		const fullPrompt = systemPrompt
 			? `${systemPrompt}\n\nユーザーのメッセージ: ${message}\n回答:`
 			: `あなたは親切で有用なAIアシスタントです。以下のユーザーのメッセージに丁寧に回答してください。\n\nユーザーのメッセージ: ${message}\n回答:`;
 
-		return this.generateText(fullPrompt);
+		return this.generateTextWithUsage(fullPrompt, options).then(
+			(result) => result.text,
+		);
+	}
+
+	getLightModel(): string {
+		return this.config.lightModel;
 	}
 
 	/**
@@ -282,4 +297,8 @@ export const estimateAiTextTokens = (text: string) =>
 
 /** シンプルなチャット用API（モデル名は隠蔽） */
 export const chatWithAssistant = (message: string, systemPrompt?: string) =>
-	sharedAiClient.chat(message, systemPrompt);
+	sharedAiClient.chat(message, systemPrompt, {
+		model: sharedAiClient.getLightModel(),
+	});
+
+export const getLightAiModel = () => sharedAiClient.getLightModel();
