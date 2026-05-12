@@ -36,13 +36,13 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	// 	return;
 	// }
 
-	// TTS機能の処理
-	await handleTTS(message);
-
 	const handledMention = await handleMentionMessage(message);
 	if (handledMention) {
 		return;
 	}
+
+	// TTS機能の処理
+	await handleTTS(message);
 
 	const senryu = await detectSenryu(message.content);
 	if (senryu) {
