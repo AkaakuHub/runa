@@ -26,6 +26,7 @@ import {
 	estimateAiTextTokens,
 	generateAiTextWithUsage,
 } from "../../utils/useAI";
+import { JST_DATE_OPTION_DESCRIPTION } from "../../utils/slashDateTime";
 
 // Twitter/X URL検出とコンテンツ取得のヘルパー関数
 function extractTwitterUrls(content: string): string[] {
@@ -646,7 +647,7 @@ export const DailySummaryCommand: CommandDefinition = {
 		},
 		{
 			name: "date",
-			description: "サマリー対象日付（JST、例：2025-06-30）",
+			description: `サマリー対象${JST_DATE_OPTION_DESCRIPTION}`,
 			type: "STRING",
 			required: false,
 		},

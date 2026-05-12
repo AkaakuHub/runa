@@ -2,6 +2,7 @@
  * 日付処理の統一ユーティリティ
  * 全ての日付計算はこのファイルから関数をimportして使用すること
  */
+import { parseJSTDateInput } from "./slashDateTime";
 
 /**
  * 現在のJST時刻を取得（標準APIを使用）
@@ -38,10 +39,7 @@ const getJSTDayEndUTC = (year: number, month: number, day: number): Date => {
 export const parseJSTDateRange = (
 	dateString: string,
 ): { start: Date; end: Date } => {
-	const [year, month, day] = dateString.split("-").map(Number);
-	if (!year || !month || !day) {
-		throw new Error("Invalid date format. Use YYYY-MM-DD format.");
-	}
+	const { year, month, day } = parseJSTDateInput(dateString);
 
 	return {
 		start: getJSTDayStartUTC(year, month, day),

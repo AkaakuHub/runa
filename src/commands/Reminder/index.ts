@@ -6,15 +6,31 @@ import {
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { buildReminderRegisteredMessage } from "../../utils/reminderFormatter";
-import { parseReminderText } from "../../utils/reminderParser";
+import {
+	JST_DATE_OPTION_DESCRIPTION,
+	JST_TIME_OPTION_DESCRIPTION,
+	parseJSTDateTimeInput,
+} from "../../utils/slashDateTime";
 
 export const ReminderCommand: CommandDefinition = {
 	name: "remind",
-	description: "自然文でリマインダーを登録します。",
+	description: "日時と内容を指定してリマインダーを登録します。",
 	options: [
 		{
-			name: "text",
-			description: "例: 明日の9時に燃えるゴミ、30分後に洗濯物",
+			name: "date",
+			description: JST_DATE_OPTION_DESCRIPTION,
+			type: "STRING",
+			required: true,
+		},
+		{
+			name: "time",
+			description: JST_TIME_OPTION_DESCRIPTION,
+			type: "STRING",
+			required: true,
+		},
+		{
+			name: "message",
+			description: "リマインド内容",
 			type: "STRING",
 			required: true,
 		},
@@ -25,12 +41,32 @@ export const ReminderCommand: CommandDefinition = {
 				ephemeral: false,
 			});
 
-			const text = interaction.options.getString("text", true);
-			const parsed = await parseReminderText(text);
+			const date = interaction.options.getString("date", true);
+			const time = interaction.options.getString("time", true);
+			const message = interaction.options.getString("message", true).trim();
 
-			if (!parsed.ok) {
+			if (!message) {
 				await interaction.editReply({
-					content: buildParseFailureMessage(parsed.reason, parsed.question),
+					content: "リマインド内容を指定してください。",
+				});
+				return;
+			}
+
+			let remindAt: Date;
+			try {
+				remindAt = parseJSTDateTimeInput(date, time);
+			} catch (parseError) {
+				await interaction.editReply({
+					content:
+						parseError instanceof Error
+							? parseError.message
+							: "日時の形式を読み取れませんでした。",
+				});
+				return;
+			}
+			if (remindAt.getTime() <= Date.now()) {
+				await interaction.editReply({
+					content: "未来の日時を指定してください。",
 				});
 				return;
 			}
@@ -39,8 +75,8 @@ export const ReminderCommand: CommandDefinition = {
 				guildId: interaction.guildId,
 				channelId: interaction.channelId,
 				userId: interaction.user.id,
-				remindAt: parsed.remindAt,
-				message: parsed.message,
+				remindAt,
+				message,
 				source: "slash",
 			});
 
@@ -52,14 +88,11 @@ export const ReminderCommand: CommandDefinition = {
 			}
 
 			await interaction.editReply({
-				content: buildReminderRegisteredMessage(
-					parsed.remindAt,
-					parsed.message,
-				),
+				content: buildReminderRegisteredMessage(remindAt, message),
 			});
 
 			logInfo(
-				`Reminder registered by ${interaction.user.username}: ${parsed.remindAt.toISOString()} "${parsed.message}"`,
+				`Reminder registered by ${interaction.user.username}: ${remindAt.toISOString()} "${message}"`,
 			);
 		} catch (error) {
 			logError(`Error executing remind command: ${error}`);
@@ -79,10 +112,3 @@ export const ReminderCommand: CommandDefinition = {
 		}
 	},
 };
-
-function buildParseFailureMessage(reason: string, question?: string): string {
-	if (question) {
-		return `${reason}\n${question}`;
-	}
-	return reason;
-}

@@ -3,7 +3,13 @@ import { reminderService } from "../../services/ReminderService";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { buildReminderEditedMessage } from "../../utils/reminderFormatter";
-import { parseReminderEditText } from "../../utils/reminderParser";
+import {
+	JST_DATE_OPTION_DESCRIPTION,
+	JST_TIME_OPTION_DESCRIPTION,
+	getJSTDateInputFromDate,
+	getJSTTimeInputFromDate,
+	parseJSTDateTimeInput,
+} from "../../utils/slashDateTime";
 
 export const ReminderEditCommand: CommandDefinition = {
 	name: "remind-edit",
@@ -16,10 +22,22 @@ export const ReminderEditCommand: CommandDefinition = {
 			required: true,
 		},
 		{
-			name: "text",
-			description: "例: 明日の9時に変更、内容を牛乳に変更",
+			name: "date",
+			description: JST_DATE_OPTION_DESCRIPTION,
 			type: "STRING",
-			required: true,
+			required: false,
+		},
+		{
+			name: "time",
+			description: JST_TIME_OPTION_DESCRIPTION,
+			type: "STRING",
+			required: false,
+		},
+		{
+			name: "message",
+			description: "新しいリマインド内容",
+			type: "STRING",
+			required: false,
 		},
 	],
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
@@ -29,7 +47,9 @@ export const ReminderEditCommand: CommandDefinition = {
 			});
 
 			const id = interaction.options.getString("id", true);
-			const text = interaction.options.getString("text", true);
+			const date = interaction.options.getString("date");
+			const time = interaction.options.getString("time");
+			const message = interaction.options.getString("message")?.trim();
 			const currentReminder = reminderService.findPendingForUser(
 				id,
 				interaction.user.id,
@@ -50,16 +70,36 @@ export const ReminderEditCommand: CommandDefinition = {
 				return;
 			}
 
-			const parsed = await parseReminderEditText(text, new Date(), {
-				remindAt: new Date(currentReminder.remindAt),
-				message: currentReminder.message,
-			});
-
-			if (!parsed.ok) {
+			if (!date && !time && !message) {
 				await interaction.editReply({
-					content: buildParseFailureMessage(parsed.reason, parsed.question),
+					content: "変更する日付、時刻、内容のいずれかを指定してください。",
 				});
 				return;
+			}
+
+			const currentRemindAt = new Date(currentReminder.remindAt);
+			const newDate = date ?? getJSTDateInputFromDate(currentRemindAt);
+			const newTime = time ?? getJSTTimeInputFromDate(currentRemindAt);
+			let remindAt: Date | undefined;
+			if (date || time) {
+				try {
+					remindAt = parseJSTDateTimeInput(newDate, newTime);
+				} catch (parseError) {
+					await interaction.editReply({
+						content:
+							parseError instanceof Error
+								? parseError.message
+								: "日時の形式を読み取れませんでした。",
+					});
+					return;
+				}
+
+				if (remindAt.getTime() <= Date.now()) {
+					await interaction.editReply({
+						content: "未来の日時を指定してください。",
+					});
+					return;
+				}
 			}
 
 			const result = await reminderService.editPendingForUser(
@@ -67,8 +107,8 @@ export const ReminderEditCommand: CommandDefinition = {
 				interaction.user.id,
 				interaction.guildId,
 				{
-					remindAt: parsed.remindAt,
-					message: parsed.message,
+					remindAt,
+					message,
 				},
 			);
 
@@ -105,10 +145,3 @@ export const ReminderEditCommand: CommandDefinition = {
 		}
 	},
 };
-
-function buildParseFailureMessage(reason: string, question?: string): string {
-	if (question) {
-		return `${reason}\n${question}`;
-	}
-	return reason;
-}
