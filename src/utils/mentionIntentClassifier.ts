@@ -82,6 +82,7 @@ ${JSON.stringify(content)}`;
 		temperature: 0,
 		responseMimeType: "application/json",
 		responseJsonSchema: MENTION_INTENT_SCHEMA,
+		maxRetries: 1,
 	});
 
 	return parseJsonObject(response.text);

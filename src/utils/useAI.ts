@@ -17,6 +17,7 @@ interface GenerateTextOptions {
 	temperature?: number;
 	responseMimeType?: string;
 	responseJsonSchema?: unknown;
+	maxRetries?: number;
 }
 
 interface AiUsage {
@@ -195,7 +196,9 @@ class AiClient {
 	}> {
 		let lastError: unknown;
 
-		for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
+		const maxRetries = options?.maxRetries ?? this.config.maxRetries;
+
+		for (let attempt = 1; attempt <= maxRetries; attempt++) {
 			try {
 				const response = await this.generateContent(
 					prompt,
@@ -233,11 +236,7 @@ class AiClient {
 					`Attempt ${attempt} with ${this.config.defaultModel} failed: ${error}`,
 				);
 
-				const waited = await this.waitBeforeRetry(
-					error,
-					attempt,
-					this.config.maxRetries,
-				);
+				const waited = await this.waitBeforeRetry(error, attempt, maxRetries);
 				if (!waited) {
 					break;
 				}

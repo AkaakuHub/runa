@@ -54,7 +54,7 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 	} catch (error) {
 		logError(`Error handling mention message: ${error}`);
 		try {
-			await reply("反応はできていますが、返答生成で失敗しました。");
+			await reply(buildMentionErrorMessage(error));
 		} catch (replyError) {
 			logError(`Failed to send mention error response: ${replyError}`);
 		}
@@ -62,6 +62,18 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 	} finally {
 		stopTyping();
 	}
+}
+
+function buildMentionErrorMessage(error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error);
+	if (
+		message.includes("429") ||
+		message.toLowerCase().includes("quota") ||
+		message.includes("RESOURCE_EXHAUSTED")
+	) {
+		return "AIの利用上限に達しているため、いまは返答できません。";
+	}
+	return "反応はできていますが、返答生成で失敗しました。";
 }
 
 function isMentionedToBot(message: Message, botUserId: string): boolean {
