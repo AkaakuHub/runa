@@ -6,13 +6,11 @@ import { handleReminderMentionAction } from "./reminderMessageHandler";
 
 export async function handleMentionMessage(message: Message): Promise<boolean> {
 	const botUser = message.client.user;
-	if (!botUser || !message.mentions.has(botUser)) {
+	if (!botUser || !isMentionedToBot(message, botUser.id)) {
 		return false;
 	}
 
-	const contentWithoutMention = message.content
-		.replace(new RegExp(`<@!?${botUser.id}>`, "g"), "")
-		.trim();
+	const contentWithoutMention = removeBotMention(message.content, botUser.id);
 
 	const stopTyping = startTyping(message);
 
@@ -51,6 +49,22 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 	} finally {
 		stopTyping();
 	}
+}
+
+function isMentionedToBot(message: Message, botUserId: string): boolean {
+	return (
+		message.mentions.users.has(botUserId) ||
+		message.mentions.repliedUser?.id === botUserId ||
+		createBotMentionPattern(botUserId).test(message.content)
+	);
+}
+
+function removeBotMention(content: string, botUserId: string): string {
+	return content.replace(createBotMentionPattern(botUserId), "").trim();
+}
+
+function createBotMentionPattern(botUserId: string): RegExp {
+	return new RegExp(`<@!?${botUserId}>`, "g");
 }
 
 function startTyping(message: Message): () => void {
