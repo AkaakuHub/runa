@@ -6,6 +6,7 @@ import {
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { buildReminderRegisteredMessage } from "../../utils/reminderFormatter";
+import { parseReminderRepeatInput } from "../../utils/reminderRecurrence";
 import {
 	JST_DATE_OPTION_DESCRIPTION,
 	JST_TIME_OPTION_DESCRIPTION,
@@ -34,6 +35,17 @@ export const ReminderCommand: CommandDefinition = {
 			type: "STRING",
 			required: true,
 		},
+		{
+			name: "repeat",
+			description: "繰り返し",
+			type: "STRING",
+			required: false,
+			choices: [
+				{ name: "なし", value: "none" },
+				{ name: "毎日", value: "daily" },
+				{ name: "毎週", value: "weekly" },
+			],
+		},
 	],
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
 		try {
@@ -44,6 +56,8 @@ export const ReminderCommand: CommandDefinition = {
 			const date = interaction.options.getString("date", true);
 			const time = interaction.options.getString("time", true);
 			const message = interaction.options.getString("message", true).trim();
+			const repeatInput = interaction.options.getString("repeat");
+			const repeat = parseReminderRepeatInput(repeatInput);
 
 			if (!message) {
 				await interaction.editReply({
@@ -77,6 +91,7 @@ export const ReminderCommand: CommandDefinition = {
 				userId: interaction.user.id,
 				remindAt,
 				message,
+				repeat,
 				source: "slash",
 			});
 
@@ -88,7 +103,7 @@ export const ReminderCommand: CommandDefinition = {
 			}
 
 			await interaction.editReply({
-				content: buildReminderRegisteredMessage(remindAt, message),
+				content: buildReminderRegisteredMessage(remindAt, message, repeat),
 			});
 
 			logInfo(

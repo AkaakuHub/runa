@@ -1,5 +1,9 @@
 import type { Reminder } from "../services/ReminderService";
 import { formatReminderDateTime } from "./reminderParser";
+import {
+	formatReminderRepeatRule,
+	type ReminderRepeatRule,
+} from "./reminderRecurrence";
 
 const REMINDER_ID_LENGTH = 8;
 
@@ -10,8 +14,10 @@ function formatReminderId(reminder: Reminder): string {
 export function buildReminderRegisteredMessage(
 	remindAt: Date,
 	message: string,
+	repeat?: ReminderRepeatRule,
 ): string {
-	return `${formatReminderDateTime(remindAt)} に「${message}」をリマインドします！`;
+	const repeatLabel = repeat ? `${formatReminderRepeatRule(repeat)}、` : "";
+	return `${repeatLabel}${formatReminderDateTime(remindAt)} に「${message}」をリマインドします！`;
 }
 
 export function buildReminderListMessage(reminders: Reminder[]): string {
@@ -21,7 +27,10 @@ export function buildReminderListMessage(reminders: Reminder[]): string {
 
 	const lines = reminders.map((reminder) => {
 		const remindAt = formatReminderDateTime(new Date(reminder.remindAt));
-		return `\`${formatReminderId(reminder)}\` ${remindAt} - ${reminder.message}`;
+		const repeatLabel = reminder.repeat
+			? ` [${formatReminderRepeatRule(reminder.repeat)}]`
+			: "";
+		return `\`${formatReminderId(reminder)}\` ${remindAt}${repeatLabel} - ${reminder.message}`;
 	});
 
 	return `登録中のリマインダー:\n${lines.join("\n")}`;
@@ -33,5 +42,8 @@ export function buildReminderCanceledMessage(idPrefix: string): string {
 
 export function buildReminderEditedMessage(reminder: Reminder): string {
 	const remindAt = formatReminderDateTime(new Date(reminder.remindAt));
-	return `リマインダー \`${formatReminderId(reminder)}\` を更新しました。\n${remindAt} に「${reminder.message}」をリマインドします！`;
+	const repeatLabel = reminder.repeat
+		? `${formatReminderRepeatRule(reminder.repeat)}、`
+		: "";
+	return `リマインダー \`${formatReminderId(reminder)}\` を更新しました。\n${repeatLabel}${remindAt} に「${reminder.message}」をリマインドします！`;
 }

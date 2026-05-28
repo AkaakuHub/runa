@@ -3,11 +3,12 @@ import { reminderService } from "../../services/ReminderService";
 import type { CommandDefinition } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
 import { buildReminderEditedMessage } from "../../utils/reminderFormatter";
+import { parseReminderRepeatInput } from "../../utils/reminderRecurrence";
 import {
-	JST_DATE_OPTION_DESCRIPTION,
-	JST_TIME_OPTION_DESCRIPTION,
 	getJSTDateInputFromDate,
 	getJSTTimeInputFromDate,
+	JST_DATE_OPTION_DESCRIPTION,
+	JST_TIME_OPTION_DESCRIPTION,
 	parseJSTDateTimeInput,
 } from "../../utils/slashDateTime";
 
@@ -39,6 +40,18 @@ export const ReminderEditCommand: CommandDefinition = {
 			type: "STRING",
 			required: false,
 		},
+		{
+			name: "repeat",
+			description: "繰り返し",
+			type: "STRING",
+			required: false,
+			choices: [
+				{ name: "変更しない", value: "keep" },
+				{ name: "なし", value: "none" },
+				{ name: "毎日", value: "daily" },
+				{ name: "毎週", value: "weekly" },
+			],
+		},
 	],
 	execute: async (interaction: ChatInputCommandInteraction): Promise<void> => {
 		try {
@@ -50,6 +63,7 @@ export const ReminderEditCommand: CommandDefinition = {
 			const date = interaction.options.getString("date");
 			const time = interaction.options.getString("time");
 			const message = interaction.options.getString("message")?.trim();
+			const repeatInput = interaction.options.getString("repeat");
 			const currentReminder = reminderService.findPendingForUser(
 				id,
 				interaction.user.id,
@@ -70,9 +84,10 @@ export const ReminderEditCommand: CommandDefinition = {
 				return;
 			}
 
-			if (!date && !time && !message) {
+			if (!date && !time && !message && !repeatInput) {
 				await interaction.editReply({
-					content: "変更する日付、時刻、内容のいずれかを指定してください。",
+					content:
+						"変更する日付、時刻、内容、繰り返しのいずれかを指定してください。",
 				});
 				return;
 			}
@@ -109,6 +124,11 @@ export const ReminderEditCommand: CommandDefinition = {
 				{
 					remindAt,
 					message,
+					repeat:
+						repeatInput && repeatInput !== "keep"
+							? parseReminderRepeatInput(repeatInput)
+							: undefined,
+					clearRepeat: repeatInput === "none",
 				},
 			);
 

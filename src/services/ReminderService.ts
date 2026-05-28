@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { readJsonFileSync, writeJsonFile } from "../utils/jsonFile";
 import { logError } from "../utils/logger";
+import {
+	getNextRepeatedReminderAt,
+	type ReminderRepeatRule,
+} from "../utils/reminderRecurrence";
 
 type ReminderSource = "slash" | "mention";
 
@@ -14,9 +18,11 @@ export interface Reminder {
 	userId: string;
 	remindAt: string;
 	message: string;
+	repeat?: ReminderRepeatRule;
 	source: ReminderSource;
 	createdAt: string;
 	updatedAt?: string;
+	lastDeliveredAt?: string;
 	deliveredAt?: string;
 	canceledAt?: string;
 }
@@ -27,12 +33,15 @@ interface CreateReminderParams {
 	userId: string;
 	remindAt: Date;
 	message: string;
+	repeat?: ReminderRepeatRule;
 	source: ReminderSource;
 }
 
 interface EditReminderParams {
 	remindAt?: Date;
 	message?: string;
+	repeat?: ReminderRepeatRule;
+	clearRepeat?: boolean;
 }
 
 class ReminderService {
@@ -67,6 +76,7 @@ class ReminderService {
 			userId: params.userId,
 			remindAt: params.remindAt.toISOString(),
 			message: params.message,
+			repeat: params.repeat,
 			source: params.source,
 			createdAt: new Date().toISOString(),
 		};
@@ -162,6 +172,11 @@ class ReminderService {
 		if (params.message) {
 			reminder.message = params.message;
 		}
+		if (params.clearRepeat) {
+			delete reminder.repeat;
+		} else if (params.repeat) {
+			reminder.repeat = params.repeat;
+		}
 		reminder.updatedAt = updatedAt.toISOString();
 		await this.save();
 
@@ -175,7 +190,17 @@ class ReminderService {
 		const reminder = this.reminders.find((item) => item.id === id);
 		if (!reminder) return;
 
-		reminder.deliveredAt = deliveredAt.toISOString();
+		if (reminder.repeat) {
+			reminder.lastDeliveredAt = deliveredAt.toISOString();
+			reminder.remindAt = getNextRepeatedReminderAt(
+				new Date(reminder.remindAt),
+				reminder.repeat,
+				deliveredAt,
+			).toISOString();
+			reminder.updatedAt = deliveredAt.toISOString();
+		} else {
+			reminder.deliveredAt = deliveredAt.toISOString();
+		}
 		await this.save();
 	}
 

@@ -134,6 +134,8 @@ async function handleReminderEdit(
 			{
 				remindAt: parsed.remindAt,
 				message: parsed.message,
+				repeat: parsed.repeat,
+				clearRepeat: parsed.clearRepeat,
 			},
 		);
 
@@ -184,6 +186,7 @@ async function handleReminderCreate(
 			userId: message.author.id,
 			remindAt: parsed.remindAt,
 			message: parsed.message,
+			repeat: parsed.repeat,
 			source: "mention",
 		});
 
@@ -195,7 +198,11 @@ async function handleReminderCreate(
 		}
 
 		await reply(
-			buildReminderRegisteredMessage(parsed.remindAt, parsed.message),
+			buildReminderRegisteredMessage(
+				parsed.remindAt,
+				parsed.message,
+				parsed.repeat,
+			),
 		);
 		logInfo(
 			`Reminder registered by mention from ${message.author.username}: ${parsed.remindAt.toISOString()} "${parsed.message}"`,
