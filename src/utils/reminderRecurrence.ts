@@ -23,19 +23,6 @@ export function parseReminderRepeatInput(
 	}
 }
 
-export function formatReminderRepeatRule(
-	repeat: ReminderRepeatRule | undefined,
-): string {
-	if (!repeat) return "単発";
-
-	switch (repeat.frequency) {
-		case "daily":
-			return "毎日";
-		case "weekly":
-			return "毎週";
-	}
-}
-
 export function getNextRepeatedReminderAt(
 	currentRemindAt: Date,
 	repeat: ReminderRepeatRule,

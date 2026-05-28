@@ -1,14 +1,43 @@
 import type { Reminder } from "../services/ReminderService";
 import { formatReminderDateTime } from "./reminderParser";
-import {
-	formatReminderRepeatRule,
-	type ReminderRepeatRule,
-} from "./reminderRecurrence";
+import type { ReminderRepeatRule } from "./reminderRecurrence";
 
 const REMINDER_ID_LENGTH = 8;
+const JST_TIME_ZONE = "Asia/Tokyo";
 
 function formatReminderId(reminder: Reminder): string {
 	return reminder.id.slice(0, REMINDER_ID_LENGTH);
+}
+
+function formatReminderTime(date: Date): string {
+	return new Intl.DateTimeFormat("ja-JP", {
+		timeZone: JST_TIME_ZONE,
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		hour12: false,
+	}).format(date);
+}
+
+function formatReminderWeekday(date: Date): string {
+	return new Intl.DateTimeFormat("ja-JP", {
+		timeZone: JST_TIME_ZONE,
+		weekday: "short",
+	}).format(date);
+}
+
+function formatReminderSchedule(
+	remindAt: Date,
+	repeat?: ReminderRepeatRule,
+): string {
+	if (!repeat) return formatReminderDateTime(remindAt);
+
+	switch (repeat.frequency) {
+		case "daily":
+			return `毎日${formatReminderTime(remindAt)}`;
+		case "weekly":
+			return `毎週${formatReminderWeekday(remindAt)}${formatReminderTime(remindAt)}`;
+	}
 }
 
 export function buildReminderRegisteredMessage(
@@ -16,8 +45,7 @@ export function buildReminderRegisteredMessage(
 	message: string,
 	repeat?: ReminderRepeatRule,
 ): string {
-	const repeatLabel = repeat ? `${formatReminderRepeatRule(repeat)}、` : "";
-	return `${repeatLabel}${formatReminderDateTime(remindAt)} に「${message}」をリマインドします！`;
+	return `${formatReminderSchedule(remindAt, repeat)} に「${message}」をリマインドします！`;
 }
 
 export function buildReminderListMessage(reminders: Reminder[]): string {
@@ -26,11 +54,9 @@ export function buildReminderListMessage(reminders: Reminder[]): string {
 	}
 
 	const lines = reminders.map((reminder) => {
-		const remindAt = formatReminderDateTime(new Date(reminder.remindAt));
-		const repeatLabel = reminder.repeat
-			? ` [${formatReminderRepeatRule(reminder.repeat)}]`
-			: "";
-		return `\`${formatReminderId(reminder)}\` ${remindAt}${repeatLabel} - ${reminder.message}`;
+		const remindAt = new Date(reminder.remindAt);
+		const schedule = formatReminderSchedule(remindAt, reminder.repeat);
+		return `\`${formatReminderId(reminder)}\` ${schedule} - ${reminder.message}`;
 	});
 
 	return `登録中のリマインダー:\n${lines.join("\n")}`;
@@ -41,9 +67,6 @@ export function buildReminderCanceledMessage(idPrefix: string): string {
 }
 
 export function buildReminderEditedMessage(reminder: Reminder): string {
-	const remindAt = formatReminderDateTime(new Date(reminder.remindAt));
-	const repeatLabel = reminder.repeat
-		? `${formatReminderRepeatRule(reminder.repeat)}、`
-		: "";
-	return `リマインダー \`${formatReminderId(reminder)}\` を更新しました。\n${repeatLabel}${remindAt} に「${reminder.message}」をリマインドします！`;
+	const remindAt = new Date(reminder.remindAt);
+	return `リマインダー \`${formatReminderId(reminder)}\` を更新しました。\n${formatReminderSchedule(remindAt, reminder.repeat)} に「${reminder.message}」をリマインドします！`;
 }
