@@ -191,12 +191,21 @@ class ReminderService {
 		if (!reminder) return;
 
 		if (reminder.repeat) {
-			reminder.lastDeliveredAt = deliveredAt.toISOString();
-			reminder.remindAt = getNextRepeatedReminderAt(
+			const nextRemindAt = getNextRepeatedReminderAt(
 				new Date(reminder.remindAt),
 				reminder.repeat,
 				deliveredAt,
-			).toISOString();
+			);
+
+			reminder.lastDeliveredAt = deliveredAt.toISOString();
+			if (!nextRemindAt) {
+				reminder.deliveredAt = deliveredAt.toISOString();
+				reminder.updatedAt = deliveredAt.toISOString();
+				await this.save();
+				return;
+			}
+
+			reminder.remindAt = nextRemindAt.toISOString();
 			reminder.updatedAt = deliveredAt.toISOString();
 		} else {
 			reminder.deliveredAt = deliveredAt.toISOString();

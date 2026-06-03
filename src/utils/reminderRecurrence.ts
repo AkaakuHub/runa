@@ -1,8 +1,9 @@
-export type ReminderRepeatFrequency = "daily" | "weekly";
+export type ReminderRepeatFrequency = "daily" | "weekly" | "interval";
 
-export interface ReminderRepeatRule {
-	frequency: ReminderRepeatFrequency;
-}
+export type ReminderRepeatRule =
+	| { frequency: "daily" }
+	| { frequency: "weekly" }
+	| { frequency: "interval"; intervalMinutes: number; until: string };
 
 export function parseReminderRepeatInput(
 	input: string | null | undefined,
@@ -27,7 +28,29 @@ export function getNextRepeatedReminderAt(
 	currentRemindAt: Date,
 	repeat: ReminderRepeatRule,
 	now: Date,
-): Date {
+): Date | undefined {
+	if (repeat.frequency === "interval") {
+		const until = new Date(repeat.until);
+		if (Number.isNaN(until.getTime())) return undefined;
+		if (
+			!Number.isInteger(repeat.intervalMinutes) ||
+			repeat.intervalMinutes <= 0
+		) {
+			return undefined;
+		}
+
+		const nextRemindAt = new Date(
+			currentRemindAt.getTime() + repeat.intervalMinutes * 60 * 1000,
+		);
+		while (nextRemindAt.getTime() <= now.getTime()) {
+			nextRemindAt.setUTCMinutes(
+				nextRemindAt.getUTCMinutes() + repeat.intervalMinutes,
+			);
+		}
+
+		return nextRemindAt.getTime() <= until.getTime() ? nextRemindAt : undefined;
+	}
+
 	const nextRemindAt = new Date(currentRemindAt.getTime());
 	const addDays = repeat.frequency === "daily" ? 1 : 7;
 

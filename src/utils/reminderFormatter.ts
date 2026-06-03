@@ -37,6 +37,8 @@ function formatReminderSchedule(
 			return `毎日${formatReminderTime(remindAt)}`;
 		case "weekly":
 			return `毎週${formatReminderWeekday(remindAt)}${formatReminderTime(remindAt)}`;
+		case "interval":
+			return `${repeat.intervalMinutes}分ごと（${formatReminderDateTime(remindAt)}から${formatReminderDateTime(new Date(repeat.until))}まで）`;
 	}
 }
 

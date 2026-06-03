@@ -90,6 +90,15 @@ export async function parseReminderText(
 		return localResult;
 	}
 
+	const intervalResult = parseSimpleIntervalReminder(
+		normalizedInput,
+		now,
+		shouldKeepSeconds,
+	);
+	if (intervalResult) {
+		return intervalResult;
+	}
+
 	const recurringResult = parseSimpleRecurringReminder(
 		normalizedInput,
 		now,
@@ -185,6 +194,68 @@ function parseSimpleRelativeReminder(
 		remindAt,
 		message,
 		repeat: undefined,
+		confidence: 1,
+	};
+}
+
+function parseSimpleIntervalReminder(
+	input: string,
+	now: Date,
+	shouldKeepSeconds: boolean,
+): ReminderParseResult | null {
+	const match = input.match(
+		/^(\d+)\s*分ごとに[\s、,]*(?:(\d{1,2})(?::([0-5]\d))?|(\d{1,2})時(?:([0-5]?\d)分?)?)まで[\s、,]*(.+)$/u,
+	);
+	if (!match) return null;
+
+	const intervalMinutes = Number.parseInt(match[1], 10);
+	const untilHour = Number.parseInt(match[2] ?? match[4] ?? "", 10);
+	const untilMinute = Number.parseInt(match[3] ?? match[5] ?? "0", 10);
+	const message = cleanupReminderMessage(match[6]);
+
+	if (
+		!Number.isInteger(intervalMinutes) ||
+		intervalMinutes <= 0 ||
+		!Number.isInteger(untilHour) ||
+		untilHour < 0 ||
+		untilHour > 23 ||
+		!Number.isInteger(untilMinute) ||
+		untilMinute < 0 ||
+		untilMinute > 59 ||
+		!message
+	) {
+		return null;
+	}
+
+	const jstDate = getJSTDateParts(now);
+	let until = buildJSTDateTime({
+		...jstDate,
+		hour: untilHour,
+		minute: untilMinute,
+		second: 0,
+	});
+	if (until.getTime() <= now.getTime()) {
+		until = addJSTDays(until, 1);
+	}
+
+	const remindAt = new Date(now.getTime() + intervalMinutes * 60 * 1000);
+	normalizeReminderDate(remindAt, shouldKeepSeconds);
+	if (remindAt.getTime() > until.getTime()) {
+		return {
+			ok: false,
+			reason: "終了時刻までにリマインドできる未来の時刻がありません。",
+		};
+	}
+
+	return {
+		ok: true,
+		remindAt,
+		message,
+		repeat: {
+			frequency: "interval",
+			intervalMinutes,
+			until: until.toISOString(),
+		},
 		confidence: 1,
 	};
 }
@@ -695,5 +766,6 @@ function cleanupReminderMessage(message: string): string {
 			"",
 		)
 		.replace(/\s*(?:教えて|通知して|知らせて)$/u, "")
+		.replace(/\s*[、,]?\s*って$/u, "")
 		.trim();
 }
