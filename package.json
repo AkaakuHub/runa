@@ -20,7 +20,8 @@
 		"voicevox:status": "./scripts/start-voicevox.sh status",
 		"voicevox:restart": "./scripts/start-voicevox.sh restart",
 		"sudachi:setup": "./scripts/setup-sudachi.sh",
-		"start:full": "concurrently \"pnpm run voicevox:start\" \"pnpm run dev\""
+		"start:voicevox": "TTS_PROVIDER=voicevox concurrently \"pnpm run voicevox:start\" \"pnpm run dev\"",
+		"start:curlvoice": "TTS_PROVIDER=curlvoice pnpm run dev"
 	},
 	"dependencies": {
 		"@discordjs/opus": "^0.10.0",

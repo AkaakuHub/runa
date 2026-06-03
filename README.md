@@ -12,8 +12,9 @@ pnpm run deploy
 pnpm run voicevox:setup
 pnpm run sudachi:setup
 
-# 両方を同時に起動
-pnpm run start:full
+# TTSエンジンを指定して起動
+pnpm run start:voicevox
+pnpm run start:curlvoice
 
 # 個別に起動
 pnpm run voicevox:start  # Voicevoxのみ

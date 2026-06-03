@@ -14,7 +14,10 @@ import { synthesizeSingVoice } from "../utils/ttsSing/synthesis";
 import { TTSQueue } from "./TTSQueue";
 
 interface TTSConfig {
+	provider: TTSProvider;
 	voicevoxUrl: string;
+	curlvoiceUrl: string;
+	curlvoiceApiToken?: string;
 	speaker: number;
 	speed: number;
 	volume: number;
@@ -31,6 +34,15 @@ interface VoiceCharacter {
 	}>;
 }
 
+type TTSProvider = "voicevox" | "curlvoice";
+
+interface VoicevoxAudioQuery {
+	speedScale?: number;
+	pitchScale?: number;
+	volumeScale?: number;
+	[key: string]: unknown;
+}
+
 interface TTSPersistedSettings {
 	speed: number;
 	speaker: number;
@@ -38,6 +50,13 @@ interface TTSPersistedSettings {
 	guildSpeeds: Record<string, number>;
 	guildTtsVolumes: Record<string, number>;
 	guildMusicVolumes: Record<string, number>;
+}
+
+function parseTTSProvider(value: string | undefined): TTSProvider {
+	if (value === "curlvoice") {
+		return "curlvoice";
+	}
+	return "voicevox";
 }
 
 export class TTSService {
@@ -62,7 +81,10 @@ export class TTSService {
 	private constructor() {
 		// デフォルト設定
 		this.config = {
+			provider: parseTTSProvider(process.env.TTS_PROVIDER),
 			voicevoxUrl: process.env.VOICEVOX_URL || "http://127.0.0.1:50021",
+			curlvoiceUrl: process.env.CURLVOICE_URL || "",
+			curlvoiceApiToken: process.env.CURLVOICE_API_TOKEN,
 			speaker: 3, // ずんだもん
 			speed: 1.0,
 			volume: 0.8,
@@ -162,6 +184,10 @@ export class TTSService {
 	 */
 	public async getVoiceCharacters(): Promise<VoiceCharacter[]> {
 		try {
+			if (this.config.provider !== "voicevox") {
+				return [];
+			}
+
 			if (this.voiceCharacters.length > 0) {
 				return this.voiceCharacters;
 			}
@@ -423,6 +449,11 @@ export class TTSService {
 	}
 
 	private async generateSingAudio(text: string): Promise<string | null> {
+		if (this.config.provider !== "voicevox") {
+			logError("歌声生成は現在のTTSプロバイダーでは使用できません");
+			return null;
+		}
+
 		const score = parseSimpleSingScore(text);
 		if (!score) {
 			logError("歌声スコアの解析に失敗しました");
@@ -538,6 +569,18 @@ export class TTSService {
 		speaker: number,
 		speed: number,
 	): Promise<string | null> {
+		if (this.config.provider === "curlvoice") {
+			return this.generateCurlvoiceAudio(text);
+		}
+
+		return this.generateVoicevoxAudio(text, speaker, speed);
+	}
+
+	private async generateVoicevoxAudio(
+		text: string,
+		speaker: number,
+		speed: number,
+	): Promise<string | null> {
 		try {
 			// 一時ファイル名を生成（タイムスタンプベース）
 			const timestamp = Date.now();
@@ -563,7 +606,7 @@ export class TTSService {
 				throw new Error(`音声クエリ作成エラー: ${queryResponse.status}`);
 			}
 
-			const audioQuery = await queryResponse.json();
+			const audioQuery = (await queryResponse.json()) as VoicevoxAudioQuery;
 
 			// パラメータを設定
 			audioQuery.speedScale = speed;
@@ -592,6 +635,49 @@ export class TTSService {
 			const audioData = await synthesisResponse.arrayBuffer();
 
 			// 一時ファイルに保存
+			writeFileSync(tempFile, Buffer.from(audioData));
+			logDebug(`音声ファイルを生成しました: ${tempFile}`);
+
+			return tempFile;
+		} catch (error) {
+			logError(`音声生成エラー: ${error}`);
+			return null;
+		}
+	}
+
+	private async generateCurlvoiceAudio(text: string): Promise<string | null> {
+		try {
+			if (!this.config.curlvoiceUrl) {
+				throw new Error("CURLVOICE_URLが設定されていません");
+			}
+			if (!this.config.curlvoiceApiToken) {
+				throw new Error("CURLVOICE_API_TOKENが設定されていません");
+			}
+
+			const timestamp = Date.now();
+			const tempFile = join(
+				process.cwd(),
+				"tts-cache",
+				`tts-temp-${timestamp}.wav`,
+			);
+			const headers: Record<string, string> = {
+				Authorization: `Bearer ${this.config.curlvoiceApiToken}`,
+				"Content-Type": "application/json",
+			};
+			const response = await fetch(
+				`${this.config.curlvoiceUrl}/v1/render/speech`,
+				{
+					method: "POST",
+					headers,
+					body: JSON.stringify({ message: text }),
+				},
+			);
+
+			if (!response.ok) {
+				throw new Error(`音声合成エラー: ${response.status}`);
+			}
+
+			const audioData = await response.arrayBuffer();
 			writeFileSync(tempFile, Buffer.from(audioData));
 			logDebug(`音声ファイルを生成しました: ${tempFile}`);
 

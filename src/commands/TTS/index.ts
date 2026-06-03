@@ -68,7 +68,7 @@ export const TTSCommand: CommandDefinition = {
 - フェード: ${Math.abs(guildTtsVolume - guildMusicVolume) < 0.0001 ? "無効" : "有効"}
 - デフォルト音量: ${Math.round(config.volume * 100)}%
 - 音高: ${config.pitch}
-- VOICEVOX URL: ${config.voicevoxUrl}
+- TTSプロバイダー: ${config.provider}
 					`.trim();
 					await interaction.reply({
 						content: statusText,

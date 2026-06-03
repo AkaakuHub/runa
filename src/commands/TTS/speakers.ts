@@ -29,7 +29,7 @@ export const TTSSpeakersCommand: CommandDefinition = {
 			if (characters.length === 0) {
 				await interaction.editReply({
 					content:
-						"音声キャラクター情報を取得できませんでした。VOICEVOXエンジンが起動しているか確認してください。",
+						"音声キャラクター情報を取得できませんでした。現在のTTSプロバイダーが話者一覧に対応しているか確認してください。",
 				});
 				return;
 			}
