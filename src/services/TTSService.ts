@@ -12,6 +12,9 @@ import { logDebug, logError, logInfo } from "../utils/logger";
 import { parseSimpleSingScore } from "../utils/ttsSing/format";
 import { synthesizeSingVoice } from "../utils/ttsSing/synthesis";
 import { TTSQueue } from "./TTSQueue";
+import { CurlvoiceAudioProvider } from "./ttsProviders/CurlvoiceAudioProvider";
+import type { TTSAudioProvider } from "./ttsProviders/types";
+import { VoicevoxAudioProvider } from "./ttsProviders/VoicevoxAudioProvider";
 
 interface TTSConfig {
 	provider: TTSProvider;
@@ -35,13 +38,6 @@ interface VoiceCharacter {
 }
 
 type TTSProvider = "voicevox" | "curlvoice";
-
-interface VoicevoxAudioQuery {
-	speedScale?: number;
-	pitchScale?: number;
-	volumeScale?: number;
-	[key: string]: unknown;
-}
 
 interface TTSPersistedSettings {
 	speed: number;
@@ -77,6 +73,7 @@ export class TTSService {
 	private guildMusicVolumes: Map<string, number> = new Map();
 	private settingsPath = join(process.cwd(), "data", "tts-settings.json");
 	private readonly singSpeaker = "6000";
+	private readonly audioProvider: TTSAudioProvider;
 
 	private constructor() {
 		// デフォルト設定
@@ -91,6 +88,7 @@ export class TTSService {
 			pitch: 0.0,
 			enabled: false,
 		};
+		this.audioProvider = this.createAudioProvider();
 		this.loadPersistedSettings();
 
 		this.ttsQueue = TTSQueue.getInstance();
@@ -100,6 +98,17 @@ export class TTSService {
 
 	private setupEventListeners(): void {
 		// TTSは独自のプレイヤーを持たないため、イベントリスナーは不要
+	}
+
+	private createAudioProvider(): TTSAudioProvider {
+		if (this.config.provider === "curlvoice") {
+			return new CurlvoiceAudioProvider(
+				this.config.curlvoiceUrl,
+				this.config.curlvoiceApiToken,
+			);
+		}
+
+		return new VoicevoxAudioProvider(this.config.voicevoxUrl);
 	}
 
 	public static getInstance(): TTSService {
@@ -569,18 +578,6 @@ export class TTSService {
 		speaker: number,
 		speed: number,
 	): Promise<string | null> {
-		if (this.config.provider === "curlvoice") {
-			return this.generateCurlvoiceAudio(text);
-		}
-
-		return this.generateVoicevoxAudio(text, speaker, speed);
-	}
-
-	private async generateVoicevoxAudio(
-		text: string,
-		speaker: number,
-		speed: number,
-	): Promise<string | null> {
 		try {
 			// 一時ファイル名を生成（タイムスタンプベース）
 			const timestamp = Date.now();
@@ -590,94 +587,15 @@ export class TTSService {
 				`tts-temp-${timestamp}.wav`,
 			);
 
-			// 音声クエリを作成
-			const params = new URLSearchParams();
-			params.append("text", text);
-			params.append("speaker", speaker.toString());
-
-			const queryResponse = await fetch(
-				`${this.config.voicevoxUrl}/audio_query?${params.toString()}`,
-				{
-					method: "POST",
-				},
-			);
-
-			if (!queryResponse.ok) {
-				throw new Error(`音声クエリ作成エラー: ${queryResponse.status}`);
-			}
-
-			const audioQuery = (await queryResponse.json()) as VoicevoxAudioQuery;
-
-			// パラメータを設定
-			audioQuery.speedScale = speed;
-			audioQuery.pitchScale = this.config.pitch;
-			audioQuery.volumeScale = this.config.volume;
-
-			// 音声を合成
-			const synthesisParams = new URLSearchParams();
-			synthesisParams.append("speaker", speaker.toString());
-
-			const synthesisResponse = await fetch(
-				`${this.config.voicevoxUrl}/synthesis?${synthesisParams.toString()}`,
-				{
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify(audioQuery),
-				},
-			);
-
-			if (!synthesisResponse.ok) {
-				throw new Error(`音声合成エラー: ${synthesisResponse.status}`);
-			}
-
-			const audioData = await synthesisResponse.arrayBuffer();
+			const audioData = await this.audioProvider.synthesize({
+				text,
+				speaker,
+				speed,
+				pitch: this.config.pitch,
+				volume: this.config.volume,
+			});
 
 			// 一時ファイルに保存
-			writeFileSync(tempFile, Buffer.from(audioData));
-			logDebug(`音声ファイルを生成しました: ${tempFile}`);
-
-			return tempFile;
-		} catch (error) {
-			logError(`音声生成エラー: ${error}`);
-			return null;
-		}
-	}
-
-	private async generateCurlvoiceAudio(text: string): Promise<string | null> {
-		try {
-			if (!this.config.curlvoiceUrl) {
-				throw new Error("CURLVOICE_URLが設定されていません");
-			}
-			if (!this.config.curlvoiceApiToken) {
-				throw new Error("CURLVOICE_API_TOKENが設定されていません");
-			}
-
-			const timestamp = Date.now();
-			const tempFile = join(
-				process.cwd(),
-				"tts-cache",
-				`tts-temp-${timestamp}.wav`,
-			);
-			const headers: Record<string, string> = {
-				Authorization: `Bearer ${this.config.curlvoiceApiToken}`,
-				"Content-Type": "application/json",
-			};
-			const response = await fetch(
-				`${this.config.curlvoiceUrl}/v1/render/speech`,
-				{
-					method: "POST",
-					headers,
-					body: JSON.stringify({ message: text }),
-				},
-			);
-
-			if (!response.ok) {
-				throw new Error(`音声合成エラー: ${response.status}`);
-			}
-
-			const audioData = await response.arrayBuffer();
 			writeFileSync(tempFile, Buffer.from(audioData));
 			logDebug(`音声ファイルを生成しました: ${tempFile}`);
 
