@@ -18,7 +18,7 @@ export const TTSSkipCommand: CommandDefinition = {
 
 		try {
 			const ttsService = TTSService.getInstance();
-			if (!ttsService.isCurrentlyPlaying()) {
+			if (!ttsService.isCurrentlyPlaying(interaction.guild.id)) {
 				await interaction.reply({
 					content: "現在再生中のTTSはありません",
 					flags: MessageFlags.Ephemeral,
@@ -26,7 +26,7 @@ export const TTSSkipCommand: CommandDefinition = {
 				return;
 			}
 
-			const skipped = await ttsService.skipCurrent();
+			const skipped = await ttsService.skipCurrent(interaction.guild.id);
 			if (!skipped) {
 				await interaction.reply({
 					content: "TTSのスキップに失敗しました",

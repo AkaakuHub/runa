@@ -23,7 +23,7 @@ import { QueueManager } from "./QueueManager";
 import { TTSService } from "./TTSService";
 
 export class MusicService {
-	private static instance: MusicService;
+	private static instances: Map<string, MusicService> = new Map();
 	private player: AudioPlayer;
 	private queueManager: QueueManager;
 	private currentTextChannel?: TextChannel;
@@ -73,11 +73,15 @@ export class MusicService {
 		});
 	}
 
-	public static getInstance(): MusicService {
-		if (!MusicService.instance) {
-			MusicService.instance = new MusicService();
+	public static getInstance(guildId = "default"): MusicService {
+		const instance = MusicService.instances.get(guildId);
+		if (instance) {
+			return instance;
 		}
-		return MusicService.instance;
+
+		const newInstance = new MusicService();
+		MusicService.instances.set(guildId, newInstance);
+		return newInstance;
 	}
 
 	public checkAndLeaveEmptyChannel(guildId: string): void {

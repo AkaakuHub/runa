@@ -25,7 +25,6 @@ interface TTSConfig {
 	speed: number;
 	volume: number;
 	pitch: number;
-	enabled: boolean;
 }
 
 interface VoiceCharacter {
@@ -42,10 +41,12 @@ type TTSProvider = "voicevox" | "curlvoice";
 interface TTSPersistedSettings {
 	speed: number;
 	speaker: number;
-	userSpeakers: Record<string, number>;
+	guildEnabled: Record<string, boolean>;
+	guildUserSpeakers: Record<string, number>;
 	guildSpeeds: Record<string, number>;
 	guildTtsVolumes: Record<string, number>;
 	guildMusicVolumes: Record<string, number>;
+	guildPitches: Record<string, number>;
 }
 
 function parseTTSProvider(value: string | undefined): TTSProvider {
@@ -59,18 +60,21 @@ export class TTSService {
 	private static instance: TTSService;
 	private config: TTSConfig;
 	private voiceCharacters: VoiceCharacter[] = [];
-	private isPlaying = false;
-	private currentAudioFile: string | null = null;
-	private currentPlaybackResource: {
-		volume?: { setVolume: (volume: number) => void };
-	} | null = null;
-	private currentPlaybackGuildId: string | null = null;
-	private skipCurrentPlayback = false;
-	private ttsQueue: TTSQueue;
-	private userSpeakers: Map<string, number> = new Map();
+	private playingGuildIds: Set<string> = new Set();
+	private currentAudioFiles: Map<string, string> = new Map();
+	private currentPlaybackResources: Map<
+		string,
+		{
+			volume?: { setVolume: (volume: number) => void };
+		}
+	> = new Map();
+	private skipPlaybackGuildIds: Set<string> = new Set();
+	private guildUserSpeakers: Map<string, number> = new Map();
+	private guildEnabled: Map<string, boolean> = new Map();
 	private guildSpeeds: Map<string, number> = new Map();
 	private guildTtsVolumes: Map<string, number> = new Map();
 	private guildMusicVolumes: Map<string, number> = new Map();
+	private guildPitches: Map<string, number> = new Map();
 	private settingsPath = join(process.cwd(), "data", "tts-settings.json");
 	private readonly singSpeaker = "6000";
 	private readonly audioProvider: TTSAudioProvider;
@@ -86,12 +90,10 @@ export class TTSService {
 			speed: 1.0,
 			volume: 0.8,
 			pitch: 0.0,
-			enabled: false,
 		};
 		this.audioProvider = this.createAudioProvider();
 		this.loadPersistedSettings();
 
-		this.ttsQueue = TTSQueue.getInstance();
 		this.setupEventListeners();
 		this.loadVoiceCharacters();
 	}
@@ -130,10 +132,22 @@ export class TTSService {
 		if (typeof persisted.speaker === "number") {
 			this.config.speaker = persisted.speaker;
 		}
-		if (persisted.userSpeakers && typeof persisted.userSpeakers === "object") {
-			for (const [userId, speaker] of Object.entries(persisted.userSpeakers)) {
+		if (persisted.guildEnabled && typeof persisted.guildEnabled === "object") {
+			for (const [guildId, enabled] of Object.entries(persisted.guildEnabled)) {
+				if (typeof enabled === "boolean") {
+					this.guildEnabled.set(guildId, enabled);
+				}
+			}
+		}
+		if (
+			persisted.guildUserSpeakers &&
+			typeof persisted.guildUserSpeakers === "object"
+		) {
+			for (const [key, speaker] of Object.entries(
+				persisted.guildUserSpeakers,
+			)) {
 				if (typeof speaker === "number") {
-					this.userSpeakers.set(userId, speaker);
+					this.guildUserSpeakers.set(key, speaker);
 				}
 			}
 		}
@@ -174,16 +188,28 @@ export class TTSService {
 				}
 			}
 		}
+		if (persisted.guildPitches && typeof persisted.guildPitches === "object") {
+			for (const [guildId, pitch] of Object.entries(persisted.guildPitches)) {
+				if (typeof pitch === "number") {
+					this.guildPitches.set(
+						guildId,
+						Math.max(-10.0, Math.min(10.0, pitch)),
+					);
+				}
+			}
+		}
 	}
 
 	private savePersistedSettings(): void {
 		const persisted: TTSPersistedSettings = {
 			speed: this.config.speed,
 			speaker: this.config.speaker,
-			userSpeakers: Object.fromEntries(this.userSpeakers),
+			guildEnabled: Object.fromEntries(this.guildEnabled),
+			guildUserSpeakers: Object.fromEntries(this.guildUserSpeakers),
 			guildSpeeds: Object.fromEntries(this.guildSpeeds),
 			guildTtsVolumes: Object.fromEntries(this.guildTtsVolumes),
 			guildMusicVolumes: Object.fromEntries(this.guildMusicVolumes),
+			guildPitches: Object.fromEntries(this.guildPitches),
 		};
 		writeJsonFileSync(this.settingsPath, persisted);
 	}
@@ -245,22 +271,33 @@ export class TTSService {
 	/**
 	 * TTS機能の有効/無効を設定
 	 */
-	public setEnabled(enabled: boolean): void {
-		this.config.enabled = enabled;
-		logInfo(`TTS機能を${enabled ? "有効" : "無効"}にしました`);
+	public setEnabled(enabled: boolean, guildId: string): void {
+		this.guildEnabled.set(guildId, enabled);
+		this.savePersistedSettings();
+		logInfo(
+			`TTS機能を${enabled ? "有効" : "無効"}にしました (guild=${guildId})`,
+		);
 	}
 
 	/**
 	 * TTS機能が有効かどうかを取得
 	 */
-	public isEnabled(): boolean {
-		return this.config.enabled;
+	public isEnabled(guildId: string): boolean {
+		return this.guildEnabled.get(guildId) ?? false;
 	}
 
 	/**
 	 * 音声キャラクターを設定
 	 */
-	public setSpeaker(speaker: number, userId?: string): boolean {
+	private getGuildUserKey(guildId: string, userId: string): string {
+		return `${guildId}:${userId}`;
+	}
+
+	public setSpeaker(
+		speaker: number,
+		guildId: string,
+		userId?: string,
+	): boolean {
 		if (this.voiceCharacters.length === 0) {
 			return false;
 		}
@@ -272,9 +309,12 @@ export class TTSService {
 
 		if (exists) {
 			if (userId) {
-				this.userSpeakers.set(userId, speaker);
+				this.guildUserSpeakers.set(
+					this.getGuildUserKey(guildId, userId),
+					speaker,
+				);
 				logInfo(
-					`音声キャラクターを${speaker}に設定しました (userId=${userId})`,
+					`音声キャラクターを${speaker}に設定しました (guild=${guildId}, userId=${userId})`,
 				);
 			} else {
 				this.config.speaker = speaker;
@@ -301,8 +341,11 @@ export class TTSService {
 		logInfo(`読み上げ速度を${normalizedSpeed}に設定しました`);
 	}
 
-	public getSpeakerForUser(userId: string): number {
-		return this.userSpeakers.get(userId) ?? this.config.speaker;
+	public getSpeakerForUser(guildId: string, userId: string): number {
+		return (
+			this.guildUserSpeakers.get(this.getGuildUserKey(guildId, userId)) ??
+			this.config.speaker
+		);
 	}
 
 	public getSpeedForGuild(guildId: string): number {
@@ -317,14 +360,11 @@ export class TTSService {
 		if (guildId) {
 			this.guildTtsVolumes.set(guildId, normalizedVolume);
 			this.savePersistedSettings();
-			if (
-				this.currentPlaybackGuildId === guildId &&
-				this.currentPlaybackResource?.volume
-			) {
-				this.currentPlaybackResource.volume.setVolume(normalizedVolume);
-			}
+			this.currentPlaybackResources
+				.get(guildId)
+				?.volume?.setVolume(normalizedVolume);
 			void import("../services/MusicService").then(({ MusicService }) => {
-				MusicService.getInstance().setCurrentTtsVolume(
+				MusicService.getInstance(guildId).setCurrentTtsVolume(
 					normalizedVolume,
 					guildId,
 				);
@@ -355,9 +395,15 @@ export class TTSService {
 	/**
 	 * 音高を設定
 	 */
-	public setPitch(pitch: number): void {
-		this.config.pitch = Math.max(-10.0, Math.min(10.0, pitch));
-		logInfo(`音高を${this.config.pitch}に設定しました`);
+	public setPitch(pitch: number, guildId: string): void {
+		const normalizedPitch = Math.max(-10.0, Math.min(10.0, pitch));
+		this.guildPitches.set(guildId, normalizedPitch);
+		this.savePersistedSettings();
+		logInfo(`音高を${normalizedPitch}に設定しました (guild=${guildId})`);
+	}
+
+	public getPitchForGuild(guildId: string): number {
+		return this.guildPitches.get(guildId) ?? this.config.pitch;
 	}
 
 	/**
@@ -376,13 +422,17 @@ export class TTSService {
 		userId?: string,
 		isSing?: boolean,
 	): Promise<boolean> {
-		if (!this.config.enabled) {
+		if (!this.isEnabled(voiceChannel.guild.id)) {
 			logDebug("TTS機能が無効のため、音声再生をスキップします");
 			return false;
 		}
 
-		// キューに追加
-		return this.ttsQueue.addToQueue(text, voiceChannel, userId, isSing);
+		return TTSQueue.getInstance(voiceChannel.guild.id).addToQueue(
+			text,
+			voiceChannel,
+			userId,
+			isSing,
+		);
 	}
 
 	/**
@@ -394,7 +444,7 @@ export class TTSService {
 		userId?: string,
 		isSing = false,
 	): Promise<boolean> {
-		if (!this.config.enabled) {
+		if (!this.isEnabled(voiceChannel.guild.id)) {
 			logDebug("TTS機能が無効のため、音声再生をスキップします");
 			return false;
 		}
@@ -427,20 +477,25 @@ export class TTSService {
 
 			// 音声ファイルを生成して再生
 			const speaker = userId
-				? this.getSpeakerForUser(userId)
+				? this.getSpeakerForUser(voiceChannel.guild.id, userId)
 				: this.config.speaker;
 			const speed = this.getSpeedForGuild(voiceChannel.guild.id);
 			let success = true;
 			for (const chunk of textChunks) {
-				const audioFile = await this.generateAudio(chunk, speaker, speed);
+				const audioFile = await this.generateAudio(
+					chunk,
+					speaker,
+					speed,
+					voiceChannel.guild.id,
+				);
 				if (audioFile) {
 					const playbackSuccess = await this.playAudioAndWait(
 						audioFile,
 						voiceChannel.guild.id,
 					);
 					this.cleanupAudioFile(audioFile);
-					if (this.skipCurrentPlayback) {
-						this.skipCurrentPlayback = false;
+					if (this.skipPlaybackGuildIds.has(voiceChannel.guild.id)) {
+						this.skipPlaybackGuildIds.delete(voiceChannel.guild.id);
 						logDebug("現在のTTSをスキップしました");
 						break;
 					}
@@ -577,6 +632,7 @@ export class TTSService {
 		text: string,
 		speaker: number,
 		speed: number,
+		guildId: string,
 	): Promise<string | null> {
 		try {
 			// 一時ファイル名を生成（タイムスタンプベース）
@@ -591,7 +647,7 @@ export class TTSService {
 				text,
 				speaker,
 				speed,
-				pitch: this.config.pitch,
+				pitch: this.getPitchForGuild(guildId),
 				volume: this.config.volume,
 			});
 
@@ -615,7 +671,7 @@ export class TTSService {
 	): Promise<boolean> {
 		try {
 			// 前の音声が終わるのを待つ
-			while (this.isPlaying) {
+			while (this.playingGuildIds.has(guildId)) {
 				await new Promise((resolve) => setTimeout(resolve, 100));
 			}
 
@@ -627,18 +683,18 @@ export class TTSService {
 
 			// MusicServiceを取得して現在の再生状態を確認
 			const { MusicService } = await import("../services/MusicService");
-			const musicService = MusicService.getInstance();
+			const musicService = MusicService.getInstance(guildId);
 			const isOverlayAvailable =
 				musicService.isCurrentlyPlaying() && musicService.hasActiveMixer();
 
 			// 音楽再生中はミキサーへ差し込み、BGMを継続したまま読み上げる
 			if (isOverlayAvailable) {
 				logDebug("TTS: ミキサーへ音声を重ねます");
-				this.isPlaying = true;
-				this.currentAudioFile = audioFile;
+				this.playingGuildIds.add(guildId);
+				this.currentAudioFiles.set(guildId, audioFile);
 				const result = await musicService.enqueueTtsOverlay(audioFile);
-				this.isPlaying = false;
-				this.currentAudioFile = null;
+				this.playingGuildIds.delete(guildId);
+				this.currentAudioFiles.delete(guildId);
 				return result;
 			}
 
@@ -654,15 +710,14 @@ export class TTSService {
 			const musicPlayer = musicService.getPlayer();
 			connection.subscribe(musicPlayer);
 			musicPlayer.play(resource);
-			this.isPlaying = true;
-			this.currentAudioFile = audioFile;
-			this.currentPlaybackResource = resource;
-			this.currentPlaybackGuildId = guildId;
+			this.playingGuildIds.add(guildId);
+			this.currentAudioFiles.set(guildId, audioFile);
+			this.currentPlaybackResources.set(guildId, resource);
 
 			logDebug("TTS音声の再生を開始しました");
 
 			// 再生完了を待機
-			const result = await this.waitForPlaybackComplete(musicPlayer);
+			const result = await this.waitForPlaybackComplete(musicPlayer, guildId);
 
 			return result;
 		} catch (error) {
@@ -674,13 +729,14 @@ export class TTSService {
 	/**
 	 * 再生完了を待機
 	 */
-	private async waitForPlaybackComplete(player: AudioPlayer): Promise<boolean> {
+	private async waitForPlaybackComplete(
+		player: AudioPlayer,
+		guildId: string,
+	): Promise<boolean> {
 		return new Promise((resolve) => {
 			const timeout = setTimeout(() => {
 				cleanup();
-				this.isPlaying = false;
-				this.currentPlaybackResource = null;
-				this.currentPlaybackGuildId = null;
+				this.clearPlaybackState(guildId);
 				resolve(false);
 			}, 30_000);
 
@@ -691,17 +747,13 @@ export class TTSService {
 			};
 
 			const finishHandler = () => {
-				this.isPlaying = false;
-				this.currentPlaybackResource = null;
-				this.currentPlaybackGuildId = null;
+				this.clearPlaybackState(guildId);
 				cleanup();
 				resolve(true);
 			};
 
 			const errorHandler = () => {
-				this.isPlaying = false;
-				this.currentPlaybackResource = null;
-				this.currentPlaybackGuildId = null;
+				this.clearPlaybackState(guildId);
 				cleanup();
 				resolve(false);
 			};
@@ -709,6 +761,12 @@ export class TTSService {
 			player.once(AudioPlayerStatus.Idle, finishHandler);
 			player.once("error", errorHandler);
 		});
+	}
+
+	private clearPlaybackState(guildId: string): void {
+		this.playingGuildIds.delete(guildId);
+		this.currentAudioFiles.delete(guildId);
+		this.currentPlaybackResources.delete(guildId);
 	}
 
 	/**
@@ -720,15 +778,15 @@ export class TTSService {
 			if (connection) {
 				// TTSServiceは独自のプレイヤーを持たないため、接続のみ破棄
 				connection.destroy();
-				this.isPlaying = false;
+				this.playingGuildIds.delete(guildId);
 
 				// 切断時に音声ファイルを削除
-				if (this.currentAudioFile) {
-					this.cleanupAudioFile(this.currentAudioFile);
-					this.currentAudioFile = null;
+				const currentAudioFile = this.currentAudioFiles.get(guildId);
+				if (currentAudioFile) {
+					this.cleanupAudioFile(currentAudioFile);
+					this.currentAudioFiles.delete(guildId);
 				}
-				this.currentPlaybackResource = null;
-				this.currentPlaybackGuildId = null;
+				this.currentPlaybackResources.delete(guildId);
 
 				logDebug("TTS用ボイスチャンネルから切断しました");
 				return true;
@@ -743,30 +801,30 @@ export class TTSService {
 	/**
 	 * 現在再生中かどうかを取得
 	 */
-	public isCurrentlyPlaying(): boolean {
-		return this.isPlaying;
+	public isCurrentlyPlaying(guildId: string): boolean {
+		return this.playingGuildIds.has(guildId);
 	}
 
 	/**
 	 * 現在再生中のTTSを1件だけスキップ
 	 */
-	public async skipCurrent(): Promise<boolean> {
-		if (!this.isPlaying) {
+	public async skipCurrent(guildId: string): Promise<boolean> {
+		if (!this.playingGuildIds.has(guildId)) {
 			return false;
 		}
 
 		try {
-			this.skipCurrentPlayback = true;
+			this.skipPlaybackGuildIds.add(guildId);
 
 			const { MusicService } = await import("../services/MusicService");
-			const musicService = MusicService.getInstance();
+			const musicService = MusicService.getInstance(guildId);
 			if (musicService.skipTtsOverlay()) {
 				return true;
 			}
 			musicService.getPlayer().stop();
 			return true;
 		} catch (error) {
-			this.skipCurrentPlayback = false;
+			this.skipPlaybackGuildIds.delete(guildId);
 			logError(`TTSスキップエラー: ${error}`);
 			return false;
 		}

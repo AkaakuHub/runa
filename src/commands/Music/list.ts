@@ -17,7 +17,7 @@ export const ListCommand: CommandDefinition = {
 		}
 
 		try {
-			const musicService = MusicService.getInstance();
+			const musicService = MusicService.getInstance(interaction.guild.id);
 			const currentTrack = musicService.getCurrentPlayingUrl();
 			const queue = musicService.getCurrentQueue(interaction.guild.id);
 

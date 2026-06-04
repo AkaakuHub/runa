@@ -18,12 +18,12 @@ export async function handleTTS(message: Message): Promise<void> {
 	const ttsService = TTSService.getInstance();
 
 	// TTSが有効か確認
-	const ttsEnabled = ttsService.isEnabled();
+	const ttsEnabled = ttsService.isEnabled(message.guild.id);
 	if (!ttsEnabled) {
 		return;
 	}
 
-	const musicService = MusicService.getInstance();
+	const musicService = MusicService.getInstance(message.guild.id);
 	const activeTextChannelId = musicService.getCurrentTextChannelId();
 	if (!activeTextChannelId) {
 		logDebug("TTS: join実行チャンネルが未設定のため無視します");
@@ -74,7 +74,7 @@ export async function handleTTS(message: Message): Promise<void> {
 	}
 
 	// TTSキューの状態をログ
-	const ttsQueue = TTSQueue.getInstance();
+	const ttsQueue = TTSQueue.getInstance(message.guild.id);
 	logDebug(`TTSキュー状態: 待機中=${ttsQueue.getQueueLength()}`);
 
 	// TTSで読み上げ（キューに追加）

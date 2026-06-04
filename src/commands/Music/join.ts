@@ -45,7 +45,7 @@ export const JoinCommand: CommandDefinition = {
 			}
 
 			// ボイスチャンネルに参加
-			const musicService = MusicService.getInstance();
+			const musicService = MusicService.getInstance(interaction.guild.id);
 			const joined = await musicService.joinChannel(
 				voiceChannel,
 				interaction.channel as TextChannel,
@@ -53,7 +53,7 @@ export const JoinCommand: CommandDefinition = {
 
 			if (joined) {
 				const ttsService = TTSService.getInstance();
-				ttsService.setEnabled(true);
+				ttsService.setEnabled(true, interaction.guild.id);
 
 				await interaction.editReply(
 					`ボイスチャンネル「${voiceChannel.name}」に参加しました。TTSを有効にしました。`,

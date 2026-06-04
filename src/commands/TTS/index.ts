@@ -35,20 +35,23 @@ export const TTSCommand: CommandDefinition = {
 		try {
 			switch (action) {
 				case "on":
-					ttsService.setEnabled(true);
+					ttsService.setEnabled(true, interaction.guild.id);
 					await interaction.reply(
 						"TTS機能を有効にしました 🎤\nメッセージを読み上げるには、ボイスチャンネルに接続してください。",
 					);
 					logInfo("TTS機能が有効になりました");
 					break;
 				case "off":
-					ttsService.setEnabled(false);
+					ttsService.setEnabled(false, interaction.guild.id);
 					await interaction.reply("TTS機能を無効にしました 🔇");
 					logInfo("TTS機能が無効になりました");
 					break;
 				case "status": {
 					const config = ttsService.getConfig();
-					const userSpeaker = ttsService.getSpeakerForUser(interaction.user.id);
+					const userSpeaker = ttsService.getSpeakerForUser(
+						interaction.guild.id,
+						interaction.user.id,
+					);
 					const guildSpeed = ttsService.getSpeedForGuild(interaction.guild.id);
 					const guildTtsVolume = ttsService.getVolumeForGuild(
 						interaction.guild.id,
@@ -56,9 +59,10 @@ export const TTSCommand: CommandDefinition = {
 					const guildMusicVolume = ttsService.getMusicVolumeForGuild(
 						interaction.guild.id,
 					);
+					const guildPitch = ttsService.getPitchForGuild(interaction.guild.id);
 					const statusText = `
 **TTS機能設定**
-- 状態: ${config.enabled ? "✅ 有効" : "❌ 無効"}
+- 状態: ${ttsService.isEnabled(interaction.guild.id) ? "✅ 有効" : "❌ 無効"}
 - あなたの音声キャラクター: ${userSpeaker}
 - デフォルト音声キャラクター: ${config.speaker}
 - このサーバーの読み上げ速度: ${guildSpeed}
@@ -67,7 +71,8 @@ export const TTSCommand: CommandDefinition = {
 - このサーバーの音楽音量: ${Math.round(guildMusicVolume * 100)}%
 - フェード: ${Math.abs(guildTtsVolume - guildMusicVolume) < 0.0001 ? "無効" : "有効"}
 - デフォルト音量: ${Math.round(config.volume * 100)}%
-- 音高: ${config.pitch}
+- このサーバーの音高: ${guildPitch}
+- デフォルト音高: ${config.pitch}
 - TTSプロバイダー: ${config.provider}
 					`.trim();
 					await interaction.reply({

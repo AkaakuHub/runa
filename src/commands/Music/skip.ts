@@ -13,7 +13,7 @@ export const SkipCommand: CommandDefinition = {
 		}
 
 		try {
-			const musicService = MusicService.getInstance();
+			const musicService = MusicService.getInstance(interaction.guild.id);
 
 			if (!musicService.isCurrentlyPlaying()) {
 				await interaction.reply("現在何も再生していません");

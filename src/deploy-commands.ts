@@ -1,15 +1,15 @@
 import { REST, Routes } from "discord.js";
-import { config } from "./config/config";
+import { botClientRepository } from "./db/botClientRepository";
 import { logDebug, logError, logInfo } from "./utils/logger";
 import { getCommandBuilders } from "./utils/useCommands";
 import "./commands";
 
-if (!config.token || !config.clientId || !config.guildId) {
-	logError("環境変数が設定されていません。.env ファイルを確認してください。");
+const botClients = botClientRepository.listEnabled();
+
+if (botClients.length === 0) {
+	logError("起動対象のbotクライアントがDBに登録されていません。");
 	process.exit(1);
 }
-
-const rest = new REST({ version: "10" }).setToken(config.token);
 
 // コマンドラインパラメータでリセットフラグを確認
 const shouldReset = process.argv.includes("--reset");
@@ -25,27 +25,6 @@ if (!shouldReset && !shouldResetGlobal && !shouldResetOnly) {
 
 (async () => {
 	try {
-		// リセットフラグが指定されている場合、既存のコマンドをすべて削除
-		if (shouldReset) {
-			logInfo("既存のコマンドをリセットします...");
-			await rest.put(
-				Routes.applicationGuildCommands(config.clientId, config.guildId),
-				{ body: [] },
-			);
-			logInfo("コマンドのリセットが完了しました");
-		}
-
-		if (shouldResetGlobal) {
-			logInfo("既存のグローバルコマンドをリセットします...");
-			await rest.put(Routes.applicationCommands(config.clientId), { body: [] });
-			logInfo("グローバルコマンドのリセットが完了しました");
-		}
-
-		if (shouldResetOnly) {
-			logInfo("リセットのみが指定されました。登録処理はスキップします。");
-			return;
-		}
-
 		// 新しいコマンドを登録
 		const commands = getCommandBuilders();
 
@@ -53,15 +32,47 @@ if (!shouldReset && !shouldResetGlobal && !shouldResetOnly) {
 		logDebug("登録しようとしているコマンド:");
 		logDebug(JSON.stringify(commands, null, 2));
 
-		logInfo(`${commands.length}個のスラッシュコマンドを登録しています...`);
+		for (const botClient of botClients) {
+			const rest = new REST({ version: "10" }).setToken(botClient.token);
 
-		// 特定のギルドにのみコマンドを登録（即時反映、テスト用）
-		await rest.put(
-			Routes.applicationGuildCommands(config.clientId, config.guildId),
-			{ body: commands },
-		);
+			// リセットフラグが指定されている場合、既存のコマンドをすべて削除
+			if (shouldReset) {
+				logInfo(`既存のコマンドをリセットします: ${botClient.name}`);
+				await rest.put(
+					Routes.applicationGuildCommands(
+						botClient.clientId,
+						botClient.guildId,
+					),
+					{ body: [] },
+				);
+				logInfo(`コマンドのリセットが完了しました: ${botClient.name}`);
+			}
 
-		logInfo("スラッシュコマンドの登録が完了しました！");
+			if (shouldResetGlobal) {
+				logInfo(`既存のグローバルコマンドをリセットします: ${botClient.name}`);
+				await rest.put(Routes.applicationCommands(botClient.clientId), {
+					body: [],
+				});
+				logInfo(
+					`グローバルコマンドのリセットが完了しました: ${botClient.name}`,
+				);
+			}
+
+			if (shouldResetOnly) {
+				continue;
+			}
+
+			logInfo(
+				`${commands.length}個のスラッシュコマンドを登録しています: ${botClient.name}`,
+			);
+
+			await rest.put(
+				Routes.applicationGuildCommands(botClient.clientId, botClient.guildId),
+				{ body: commands },
+			);
+
+			logInfo(`スラッシュコマンドの登録が完了しました: ${botClient.name}`);
+		}
 	} catch (error) {
 		logError(`コマンドの登録中にエラーが発生しました: ${error}`);
 		// エラーの詳細情報を出力

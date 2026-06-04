@@ -36,7 +36,11 @@ export const TTSSpeakerCommand: CommandDefinition = {
 				return;
 			}
 
-			const success = ttsService.setSpeaker(speaker, interaction.user.id);
+			const success = ttsService.setSpeaker(
+				speaker,
+				interaction.guild.id,
+				interaction.user.id,
+			);
 
 			if (success) {
 				await interaction.reply(

@@ -38,7 +38,7 @@ export const TTSPitchCommand: CommandDefinition = {
 				return;
 			}
 
-			ttsService.setPitch(pitch);
+			ttsService.setPitch(pitch, interaction.guild.id);
 
 			await interaction.reply(`TTSの音高を${pitch}に設定しました 🎵`);
 

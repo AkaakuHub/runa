@@ -12,6 +12,9 @@ pnpm run deploy
 pnpm run voicevox:setup
 pnpm run sudachi:setup
 
+# botクライアント設定
+pnpm run admin
+
 # TTSエンジンを指定して起動
 pnpm run start:voicevox
 pnpm run start:curlvoice

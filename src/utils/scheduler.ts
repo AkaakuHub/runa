@@ -150,6 +150,10 @@ export function setupReminderScheduler(client: Client): void {
 			const dueReminders = reminderService.getDueReminders();
 			for (const reminder of dueReminders) {
 				try {
+					if (reminder.guildId && !client.guilds.cache.has(reminder.guildId)) {
+						continue;
+					}
+
 					const channel = await client.channels.fetch(reminder.channelId);
 					if (!channel?.isSendable()) {
 						logWarn(

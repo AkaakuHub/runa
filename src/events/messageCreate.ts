@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 import { handleGomamayoResponse } from "../response/Gomamayo";
 import { IyaResponse } from "../response/Iya";
+import { ngWordRepository } from "../db/ngWordRepository";
 import { MusicService } from "../services/MusicService";
 import type { IYAKind } from "../types";
 import { logDebug, logError, logInfo } from "../utils/logger";
@@ -21,6 +22,10 @@ const iyaHandler = (message: Message, kind: IYAKind): void => {
 	IyaResponse(message, kind);
 };
 
+const escapeRegExp = (value: string): string => {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
 export const messageCreateHandler = async (message: Message): Promise<void> => {
 	logDebug(
 		`messageCreate: guild=${message.guild?.id ?? "dm"} channel=${message.channelId} author=${message.author.id} bot=${message.author.bot} contentLength=${message.content.length}`,
@@ -30,11 +35,6 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	if (message.author.bot) {
 		return;
 	}
-	// ではなくて、このbot自身だけを無視する
-	// if (message.author.id === config.clientId) {
-	// 	logDebug("messageCreate: このbot自身のメッセージなので無視します");
-	// 	return;
-	// }
 
 	const handledMention = await handleMentionMessage(message);
 	if (handledMention) {
@@ -76,9 +76,9 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	const ngWordsRegex = [
 		/[ｺコこ][ｹケけ][ｰー～〜ー]*[ｯッっ]!*/i,
 		/[ﾌﾞブぶ][ﾎホほ][ｫォおぉ]+[ｯッっ]?/i,
-		...(process.env.NG_WORDS?.split(",").map(
-			(word) => new RegExp(word.trim(), "i"),
-		) || []),
+		...ngWordRepository
+			.listEnabledWords()
+			.map((word) => new RegExp(escapeRegExp(word), "i")),
 	];
 
 	if (ngWordsRegex.some((regex) => regex.test(message.content))) {
@@ -112,7 +112,7 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 		// サーバー内のメッセージのみ処理
 		if (!message.guild) return;
 
-		const musicService = MusicService.getInstance();
+		const musicService = MusicService.getInstance(message.guild.id);
 		const activeTextChannelId = musicService.getCurrentTextChannelId();
 		if (!activeTextChannelId) {
 			logDebug("YouTube: join実行チャンネルが未設定のため無視します");

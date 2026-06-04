@@ -13,7 +13,7 @@ export const ByeCommand: CommandDefinition = {
 		}
 
 		try {
-			const musicService = MusicService.getInstance();
+			const musicService = MusicService.getInstance(interaction.guild.id);
 			// キューを保持したまま退出する（clearQueue = false）
 			const left = musicService.leaveChannel(interaction.guild.id, false);
 

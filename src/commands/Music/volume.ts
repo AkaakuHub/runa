@@ -29,7 +29,7 @@ export const VolumeCommand: CommandDefinition = {
 		const level = interaction.options.getInteger("level", true);
 
 		try {
-			const musicService = MusicService.getInstance();
+			const musicService = MusicService.getInstance(interaction.guild.id);
 			const success = musicService.setVolume(level, interaction.guild.id);
 
 			if (success) {

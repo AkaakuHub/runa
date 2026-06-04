@@ -14,17 +14,21 @@ interface TTSQueueItem {
 }
 
 export class TTSQueue {
-	private static instance: TTSQueue;
+	private static instances: Map<string, TTSQueue> = new Map();
 	private queue: TTSQueueItem[] = [];
 	private isProcessing = false;
 
 	private constructor() {}
 
-	public static getInstance(): TTSQueue {
-		if (!TTSQueue.instance) {
-			TTSQueue.instance = new TTSQueue();
+	public static getInstance(guildId = "default"): TTSQueue {
+		const instance = TTSQueue.instances.get(guildId);
+		if (instance) {
+			return instance;
 		}
-		return TTSQueue.instance;
+
+		const newInstance = new TTSQueue();
+		TTSQueue.instances.set(guildId, newInstance);
+		return newInstance;
 	}
 
 	public async addToQueue(

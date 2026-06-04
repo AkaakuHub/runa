@@ -25,7 +25,7 @@ export const setupEventListeners = (client: Client): void => {
 
 				// しばらく待ってからチェック（他のユーザーの移動が完了するのを待つ）
 				setTimeout(() => {
-					const musicService = MusicService.getInstance();
+					const musicService = MusicService.getInstance(oldState.guild.id);
 					musicService.checkAndLeaveEmptyChannel(oldState.guild.id);
 				}, 500); // 500ミリ秒待機
 			}

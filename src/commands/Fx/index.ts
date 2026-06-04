@@ -1,5 +1,4 @@
 import type { ChatInputCommandInteraction } from "discord.js";
-import { config } from "../../config/config";
 import type { CommandDefinition } from "../../types";
 import { convertTwitterLinks } from "../../utils/fxTwitter";
 import { logError, logInfo } from "../../utils/logger";
@@ -31,7 +30,7 @@ export const FxCommand: CommandDefinition = {
 				// コマンドメッセージ自体はスキップ
 				if (msg.id === interaction.id) return false;
 				// bot自身が投稿した変換済みメッセージはスキップ
-				if (msg.author.id === config.clientId) return false;
+				if (msg.author.id === interaction.client.user.id) return false;
 				// twitter/xリンクが含まれているかチェック
 				return convertTwitterLinks(msg.content).length > 0;
 			});

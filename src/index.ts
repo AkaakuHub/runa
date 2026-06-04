@@ -1,6 +1,6 @@
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, Events, GatewayIntentBits } from "discord.js";
 import * as dotenv from "dotenv";
-import { config } from "./config/config";
+import { botClientRepository } from "./db/botClientRepository";
 import { setupEventListeners } from "./events";
 import { logError, logInfo } from "./utils/logger";
 import {
@@ -9,36 +9,38 @@ import {
 } from "./utils/scheduler";
 
 // 環境変数の読み込みを確実に行う
-dotenv.config();
+dotenv.config({ quiet: true });
 
-// クライアントの作成
-const client = new Client({
-	intents: [
-		GatewayIntentBits.Guilds,
-		GatewayIntentBits.GuildMessages,
-		GatewayIntentBits.GuildVoiceStates,
-		GatewayIntentBits.MessageContent,
-	],
-});
+const botClients = botClientRepository.listEnabled();
 
-// 起動時のイベントハンドラ
-client.once("ready", () => {
-	logInfo(`起動完了！ログイン: ${client.user?.tag}`);
-	logInfo(
-		`環境変数: TOKEN=${config.token ? "設定済み" : "未設定"}, CLIENT_ID=${config.clientId ? "設定済み" : "未設定"}`,
-	);
-
-	setupDailySummaryScheduler(client);
-	setupReminderScheduler(client);
-});
-
-// イベントリスナーのセットアップ
-setupEventListeners(client);
-
-// ボットのログイン
-if (!config.token) {
-	logError("トークンが設定されていません。.env ファイルを確認してください。");
+if (botClients.length === 0) {
+	logError("起動対象のbotクライアントがDBに登録されていません。");
 	process.exit(1);
 }
 
-client.login(config.token);
+for (const botClient of botClients) {
+	const client = new Client({
+		intents: [
+			GatewayIntentBits.Guilds,
+			GatewayIntentBits.GuildMessages,
+			GatewayIntentBits.GuildVoiceStates,
+			GatewayIntentBits.MessageContent,
+		],
+	});
+
+	client.once(Events.ClientReady, () => {
+		const message = `起動完了: ${botClient.name} (${client.user?.tag})`;
+		console.log(message);
+		logInfo(message);
+		setupDailySummaryScheduler(client);
+		setupReminderScheduler(client);
+	});
+
+	setupEventListeners(client);
+
+	void client.login(botClient.token).catch((error) => {
+		logError(
+			`botクライアントのログインに失敗しました: ${botClient.name}, ${error}`,
+		);
+	});
+}
