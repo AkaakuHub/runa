@@ -1,2 +1,10 @@
+allowBuilds:
+  '@discordjs/opus': true
+  '@google/genai': true
+  esbuild: true
+  ffmpeg-static: true
+  lefthook: true
+  protobufjs: true
+  sharp: true
 ignoredBuiltDependencies:
   - canvas

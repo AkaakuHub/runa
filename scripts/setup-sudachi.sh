@@ -5,6 +5,7 @@ set -euo pipefail
 SUDACHI_DIR="sudachi"
 VENV_DIR="$SUDACHI_DIR/.venv"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
+UV_BIN="${UV_BIN:-uv}"
 REQUIREMENTS=(sudachipy sudachidict_core)
 PYTHON_VENV=""
 PYTHON_MAJOR=0
@@ -35,6 +36,13 @@ ensure_python() {
   fi
 }
 
+ensure_uv() {
+  if ! command -v "$UV_BIN" >/dev/null 2>&1; then
+    log_error "uv が見つかりません。uv をインストールするか、UV_BIN 変数でパスを指定してください。"
+    exit 1
+  fi
+}
+
 detect_python_version() {
   PYTHON_VERSION=$("$PYTHON_BIN" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
   IFS='.' read -r PYTHON_MAJOR PYTHON_MINOR <<< "$PYTHON_VERSION"
@@ -50,10 +58,11 @@ handle_python_compat() {
 }
 
 create_venv() {
-  if [[ ! -d "$VENV_DIR" ]]; then
+  if [[ ! -f "$VENV_DIR/bin/activate" && ! -f "$VENV_DIR/Scripts/activate" ]]; then
     log_info "仮想環境を作成します (${VENV_DIR})"
+    rm -rf "$VENV_DIR"
     mkdir -p "$SUDACHI_DIR"
-    "$PYTHON_BIN" -m venv "$VENV_DIR"
+    "$UV_BIN" venv --python "$PYTHON_BIN" "$VENV_DIR"
   else
     log_info "既存の仮想環境を使用します"
   fi
@@ -74,8 +83,7 @@ activate_venv() {
 
 install_requirements() {
   log_info "SudachiPy と辞書をインストールします"
-  pip install --upgrade pip >/dev/null
-  pip install --upgrade "${REQUIREMENTS[@]}"
+  "$UV_BIN" pip install --python "$PYTHON_VENV" --upgrade "${REQUIREMENTS[@]}"
 }
 
 run_smoke_test() {
@@ -92,6 +100,7 @@ PY
 
 main() {
   ensure_python
+  ensure_uv
   detect_python_version
   handle_python_compat
   create_venv
