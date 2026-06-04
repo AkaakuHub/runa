@@ -1,6 +1,9 @@
 import path from "node:path";
-import { readJsonFile, writeJsonFile } from "../utils/jsonFile";
 import { logError, logInfo } from "../utils/logger";
+import {
+	readPersistedState,
+	writePersistedState,
+} from "../utils/persistedState";
 
 interface DailyChannelConfig {
 	[guildId: string]: {
@@ -20,7 +23,7 @@ class DailyChannelService {
 
 	private async loadConfig(): Promise<void> {
 		try {
-			const rawConfig = await readJsonFile<Record<string, unknown>>(
+			const rawConfig = await readPersistedState<Record<string, unknown>>(
 				this.configPath,
 				{},
 			);
@@ -55,7 +58,7 @@ class DailyChannelService {
 
 	private async saveConfig(): Promise<void> {
 		try {
-			await writeJsonFile(this.configPath, this.config);
+			await writePersistedState(this.configPath, this.config);
 			logInfo("Daily channel config saved");
 		} catch (error) {
 			logError(`Failed to save daily channel config: ${error}`);

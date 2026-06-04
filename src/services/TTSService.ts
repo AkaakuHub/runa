@@ -7,8 +7,11 @@ import {
 	getVoiceConnection,
 } from "@discordjs/voice";
 import type { VoiceChannel } from "discord.js";
-import { readJsonFileSync, writeJsonFileSync } from "../utils/jsonFile";
 import { logDebug, logError, logInfo } from "../utils/logger";
+import {
+	readPersistedStateSync,
+	writePersistedStateSync,
+} from "../utils/persistedState";
 import { parseSimpleSingScore } from "../utils/ttsSing/format";
 import { synthesizeSingVoice } from "../utils/ttsSing/synthesis";
 import { TTSQueue } from "./TTSQueue";
@@ -121,7 +124,7 @@ export class TTSService {
 	}
 
 	private loadPersistedSettings(): void {
-		const persisted = readJsonFileSync<Partial<TTSPersistedSettings>>(
+		const persisted = readPersistedStateSync<Partial<TTSPersistedSettings>>(
 			this.settingsPath,
 			{},
 		);
@@ -211,7 +214,7 @@ export class TTSService {
 			guildMusicVolumes: Object.fromEntries(this.guildMusicVolumes),
 			guildPitches: Object.fromEntries(this.guildPitches),
 		};
-		writeJsonFileSync(this.settingsPath, persisted);
+		writePersistedStateSync(this.settingsPath, persisted);
 	}
 
 	/**

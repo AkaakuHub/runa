@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { readJsonFileSync, writeJsonFile } from "../utils/jsonFile";
 import { logError } from "../utils/logger";
+import {
+	readPersistedStateSync,
+	writePersistedState,
+} from "../utils/persistedState";
 import {
 	getNextRepeatedReminderAt,
 	type ReminderRepeatRule,
@@ -54,7 +57,7 @@ class ReminderService {
 	private saveQueue: Promise<void> = Promise.resolve();
 
 	constructor() {
-		this.reminders = readJsonFileSync<Reminder[]>(this.filePath, []);
+		this.reminders = readPersistedStateSync<Reminder[]>(this.filePath, []);
 	}
 
 	create(
@@ -215,7 +218,7 @@ class ReminderService {
 
 	private async save(): Promise<void> {
 		this.saveQueue = this.saveQueue
-			.then(() => writeJsonFile(this.filePath, this.reminders))
+			.then(() => writePersistedState(this.filePath, this.reminders))
 			.catch((error) => {
 				logError(`Failed to save reminders: ${error}`);
 			});

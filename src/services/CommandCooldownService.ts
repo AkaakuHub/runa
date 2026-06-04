@@ -1,6 +1,9 @@
 import { join } from "node:path";
-import { readJsonFileSync, writeJsonFileSync } from "../utils/jsonFile";
 import { logError } from "../utils/logger";
+import {
+	readPersistedStateSync,
+	writePersistedStateSync,
+} from "../utils/persistedState";
 
 interface CommandCooldownStore {
 	[commandName: string]: {
@@ -29,7 +32,10 @@ class CommandCooldownService {
 	private store: CommandCooldownStore = {};
 
 	constructor() {
-		this.store = readJsonFileSync<CommandCooldownStore>(this.storagePath, {});
+		this.store = readPersistedStateSync<CommandCooldownStore>(
+			this.storagePath,
+			{},
+		);
 	}
 
 	public checkAndConsume({
@@ -72,7 +78,7 @@ class CommandCooldownService {
 
 	private persist(): void {
 		try {
-			writeJsonFileSync(this.storagePath, this.store);
+			writePersistedStateSync(this.storagePath, this.store);
 		} catch (error) {
 			logError(`Failed to save command cooldowns: ${error}`);
 		}
