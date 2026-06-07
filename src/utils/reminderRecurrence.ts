@@ -1,8 +1,8 @@
 export type ReminderRepeatFrequency = "daily" | "weekly" | "interval";
 
 export type ReminderRepeatRule =
-	| { frequency: "daily" }
-	| { frequency: "weekly" }
+	| { frequency: "daily"; until?: string }
+	| { frequency: "weekly"; until?: string }
 	| { frequency: "interval"; intervalMinutes: number; until: string };
 
 export function parseReminderRepeatInput(
@@ -57,6 +57,12 @@ export function getNextRepeatedReminderAt(
 	do {
 		nextRemindAt.setUTCDate(nextRemindAt.getUTCDate() + addDays);
 	} while (nextRemindAt.getTime() <= now.getTime());
+
+	if (repeat.until) {
+		const until = new Date(repeat.until);
+		if (Number.isNaN(until.getTime())) return undefined;
+		if (nextRemindAt.getTime() > until.getTime()) return undefined;
+	}
 
 	return nextRemindAt;
 }

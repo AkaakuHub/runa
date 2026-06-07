@@ -27,6 +27,7 @@ interface AiReminderParseResult {
 	remindAt?: string | null;
 	message?: string | null;
 	repeatFrequency?: ReminderRepeatFrequency | "none" | null;
+	repeatUntil?: string | null;
 	confidence?: number;
 	needsConfirmation?: boolean;
 	question?: string | null;
@@ -336,6 +337,12 @@ async function parseReminderWithAi(
 - 繰り返し指定がない場合、repeatFrequency は "none" にする。
 - 「毎日」「毎朝」「デイリー」は repeatFrequency を "daily" にする。
 - 「毎週」は repeatFrequency を "weekly" にする。
+- 「6/30まで」「今月末まで」など繰り返しの終了条件がある場合は、本文に含めず repeatUntil に入れる。
+- repeatUntil は ISO 8601 形式で、必ず Asia/Tokyo の +09:00 オフセットを含める。
+- repeatUntil の日付だけが指定された場合は、その日の 23:59:59 とする。
+- 「6/25以降、20:00に毎日、6/30まで」のような入力は、remindAt を 6/25 20:00、repeatFrequency を "daily"、repeatUntil を 6/30 23:59:59 とする。
+- 「"A、6/30まで"というメッセージを、6/25以降の20:00に毎日」のように引用符内に「まで」が含まれていても、外側に繰り返し条件がある場合は「6/30まで」を繰り返しの終了条件として扱い、message は A だけにする。
+- 「Xというメッセージを」は X を通知本文として扱う。ただし、X に終了条件が混在している場合は終了条件を message から分離する。
 - ユーザーが秒を明示した場合はその秒を使う。秒の指定がない場合、秒とミリ秒は必ず 00 にする。
 - 「明日」「来週」「朝」「昼」「夜」などは現在時刻を基準に自然に解釈する。
 - 日付だけで時刻が未指定の場合は、その日の 05:00 とする。
@@ -349,6 +356,7 @@ JSONスキーマ:
   "remindAt": "YYYY-MM-DDTHH:mm:ss+09:00" | null,
   "message": "通知本文" | null,
   "repeatFrequency": "none" | "daily" | "weekly" | null,
+  "repeatUntil": "YYYY-MM-DDTHH:mm:ss+09:00" | null,
   "confidence": 0.0-1.0,
   "needsConfirmation": boolean,
   "question": "確認質問" | null
@@ -393,6 +401,11 @@ ${currentReminderContext}
 - 繰り返しを解除する意図がある場合は repeatFrequency を "none" にする。
 - 「毎日」「毎朝」「デイリー」は repeatFrequency を "daily" にする。
 - 「毎週」は repeatFrequency を "weekly" にする。
+- 「6/30まで」「今月末まで」など繰り返しの終了条件がある場合は repeatUntil に入れる。
+- repeatUntil は ISO 8601 形式で、必ず Asia/Tokyo の +09:00 オフセットを含める。
+- repeatUntil の日付だけが指定された場合は、その日の 23:59:59 とする。
+- 「"A、6/30まで"というメッセージを、6/25以降の20:00に毎日」のように引用符内に「まで」が含まれていても、外側に繰り返し条件がある場合は「6/30まで」を繰り返しの終了条件として扱い、message は A だけにする。
+- 「Xというメッセージを」は X を通知本文として扱う。ただし、X に終了条件が混在している場合は終了条件を message から分離する。
 - remindAt は ISO 8601 形式で、必ず Asia/Tokyo の +09:00 オフセットを含める。
 - ユーザーが秒を明示した場合はその秒を使う。秒の指定がない場合、秒とミリ秒は必ず 00 にする。
 - 日付だけで時刻が未指定の場合は、その日の 05:00 とする。
@@ -410,6 +423,7 @@ JSONスキーマ:
   "remindAt": "YYYY-MM-DDTHH:mm:ss+09:00" | null,
   "message": "新しい通知本文" | null,
   "repeatFrequency": "none" | "daily" | "weekly" | null,
+  "repeatUntil": "YYYY-MM-DDTHH:mm:ss+09:00" | null,
   "confidence": 0.0-1.0,
   "needsConfirmation": boolean,
   "question": "確認質問" | null
@@ -454,7 +468,8 @@ function validateAiResult(
 	const remindAt = new Date(result.remindAt);
 	normalizeReminderDate(remindAt, shouldKeepSeconds);
 	const message = cleanupReminderMessage(result.message);
-	const repeat = parseAiRepeatFrequency(result.repeatFrequency);
+	const repeatUntil = parseAiRepeatUntil(result.repeatUntil);
+	const repeat = parseAiRepeatFrequency(result.repeatFrequency, repeatUntil);
 
 	if (Number.isNaN(remindAt.getTime())) {
 		return {
@@ -494,6 +509,27 @@ function validateAiResult(
 			ok: false,
 			reason: `${MAX_REMINDER_YEARS}年以内の日時を指定してください。`,
 		};
+	}
+
+	if (repeatUntil) {
+		if (repeatUntil.getTime() <= now.getTime()) {
+			return {
+				ok: false,
+				reason: "繰り返しの終了日時は未来の日時を指定してください。",
+			};
+		}
+		if (repeatUntil.getTime() < remindAt.getTime()) {
+			return {
+				ok: false,
+				reason: "繰り返しの終了日時は最初のリマインド日時以降を指定してください。",
+			};
+		}
+		if (repeatUntil.getTime() > maxReminderAt.getTime()) {
+			return {
+				ok: false,
+				reason: `${MAX_REMINDER_YEARS}年以内の終了日時を指定してください。`,
+			};
+		}
 	}
 
 	return {
@@ -549,7 +585,8 @@ function validateAiEditResult(
 	const message = result.message
 		? cleanupReminderMessage(result.message)
 		: undefined;
-	const repeat = parseAiRepeatFrequency(result.repeatFrequency);
+	const repeatUntil = parseAiRepeatUntil(result.repeatUntil);
+	const repeat = parseAiRepeatFrequency(result.repeatFrequency, repeatUntil);
 	const clearRepeat = result.repeatFrequency === "none";
 
 	if (!remindAt && !message && !repeat && !clearRepeat) {
@@ -569,6 +606,29 @@ function validateAiEditResult(
 		};
 	}
 
+	if (repeatUntil) {
+		if (repeatUntil.getTime() <= now.getTime()) {
+			return {
+				ok: false,
+				reason: "繰り返しの終了日時は未来の日時を指定してください。",
+			};
+		}
+		if (remindAt && repeatUntil.getTime() < remindAt.getTime()) {
+			return {
+				ok: false,
+				reason: "繰り返しの終了日時は最初のリマインド日時以降を指定してください。",
+			};
+		}
+		const maxReminderAt = new Date(now.getTime());
+		maxReminderAt.setFullYear(maxReminderAt.getFullYear() + MAX_REMINDER_YEARS);
+		if (repeatUntil.getTime() > maxReminderAt.getTime()) {
+			return {
+				ok: false,
+				reason: `${MAX_REMINDER_YEARS}年以内の終了日時を指定してください。`,
+			};
+		}
+	}
+
 	return {
 		ok: true,
 		remindAt,
@@ -581,15 +641,28 @@ function validateAiEditResult(
 
 function parseAiRepeatFrequency(
 	frequency: AiReminderParseResult["repeatFrequency"],
+	until?: Date,
 ): ReminderRepeatRule | undefined {
+	const untilIso = until?.toISOString();
 	switch (frequency) {
 		case "daily":
-			return { frequency: "daily" };
+			return untilIso
+				? { frequency: "daily", until: untilIso }
+				: { frequency: "daily" };
 		case "weekly":
-			return { frequency: "weekly" };
+			return untilIso
+				? { frequency: "weekly", until: untilIso }
+				: { frequency: "weekly" };
 		default:
 			return undefined;
 	}
+}
+
+function parseAiRepeatUntil(until: AiReminderParseResult["repeatUntil"]): Date | undefined {
+	if (!until) return undefined;
+
+	const parsedUntil = new Date(until);
+	return Number.isNaN(parsedUntil.getTime()) ? undefined : parsedUntil;
 }
 
 function parseJsonObject(text: string): AiReminderParseResult {

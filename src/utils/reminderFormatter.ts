@@ -34,9 +34,13 @@ function formatReminderSchedule(
 
 	switch (repeat.frequency) {
 		case "daily":
-			return `毎日${formatReminderTime(remindAt)}`;
+			return repeat.until
+				? `毎日${formatReminderTime(remindAt)}（${formatReminderDateTime(remindAt)}から${formatReminderDateTime(new Date(repeat.until))}まで）`
+				: `毎日${formatReminderTime(remindAt)}`;
 		case "weekly":
-			return `毎週${formatReminderWeekday(remindAt)}${formatReminderTime(remindAt)}`;
+			return repeat.until
+				? `毎週${formatReminderWeekday(remindAt)}${formatReminderTime(remindAt)}（${formatReminderDateTime(remindAt)}から${formatReminderDateTime(new Date(repeat.until))}まで）`
+				: `毎週${formatReminderWeekday(remindAt)}${formatReminderTime(remindAt)}`;
 		case "interval":
 			return `${repeat.intervalMinutes}分ごと（${formatReminderDateTime(remindAt)}から${formatReminderDateTime(new Date(repeat.until))}まで）`;
 	}
