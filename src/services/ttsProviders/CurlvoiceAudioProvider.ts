@@ -23,9 +23,13 @@ function formatFetchError(error: unknown): string {
 
 export class CurlvoiceAudioProvider implements TTSAudioProvider {
 	public constructor(
-		private readonly baseUrl: string,
+		baseUrl: string,
 		private readonly apiToken: string | undefined,
-	) {}
+	) {
+		this.baseUrl = baseUrl.replace(/\/+$/, "");
+	}
+
+	private readonly baseUrl: string;
 
 	public async synthesize(options: TTSSynthesisOptions): Promise<ArrayBuffer> {
 		if (!this.baseUrl) {

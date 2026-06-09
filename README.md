@@ -15,8 +15,7 @@ pnpm run sudachi:setup
 # botクライアント設定
 pnpm run admin
 
-# TTSエンジンを指定して起動
-pnpm run start:voicevox
+# 外部TTSを使用して起動
 pnpm run start:curlvoice
 
 # 個別に起動
