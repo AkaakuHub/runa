@@ -21,6 +21,7 @@ export async function streamYoutubeAudio(
 		const args = [
 			"-f",
 			"bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio/best*[acodec!=none]/best",
+			...getYtDlpCookiesArgs(),
 			"-o",
 			"-",
 			"--no-playlist",
@@ -298,4 +299,10 @@ function resolveYtDlpBinary(): string {
 	}
 
 	return "yt-dlp";
+}
+
+function getYtDlpCookiesArgs(): string[] {
+	const cookiesPath = process.env.YT_DLP_COOKIES_PATH;
+
+	return cookiesPath ? ["--cookies", cookiesPath] : [];
 }
