@@ -38,7 +38,17 @@ export interface WebSearchSource {
 }
 
 interface SearchWebOptions {
+	maxCandidates?: number;
+	maxResults?: number;
+	concurrency?: number;
 	onProgress?: (content: string) => Promise<void>;
+}
+
+interface WebSearchRuntimeConfig
+	extends ReturnType<typeof getRequiredWebSearchConfig> {
+	maxResults: number;
+	maxCandidates: number;
+	concurrency: number;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -112,6 +122,36 @@ const getRequiredWebSearchConfig = () => {
 		maxCandidates: envConfig.WEB_SEARCH_MAX_CANDIDATES,
 		maxMarkdownLength: envConfig.WEB_SEARCH_MAX_MARKDOWN_LENGTH,
 		concurrency: envConfig.WEB_SEARCH_CONCURRENCY,
+	};
+};
+
+const clampInteger = (value: number, min: number, max: number): number => {
+	if (!Number.isInteger(value)) {
+		throw new Error("Web検索設定の数値が整数ではありません。");
+	}
+
+	return Math.min(Math.max(value, min), max);
+};
+
+const getRuntimeConfig = (
+	options: SearchWebOptions,
+): WebSearchRuntimeConfig => {
+	const config = getRequiredWebSearchConfig();
+	const maxResults = options.maxResults
+		? clampInteger(options.maxResults, 1, config.maxResults)
+		: config.maxResults;
+	const maxCandidates = options.maxCandidates
+		? clampInteger(options.maxCandidates, maxResults, config.maxCandidates)
+		: config.maxCandidates;
+	const concurrency = options.concurrency
+		? clampInteger(options.concurrency, 1, config.concurrency)
+		: config.concurrency;
+
+	return {
+		...config,
+		maxResults,
+		maxCandidates,
+		concurrency,
 	};
 };
 
@@ -232,7 +272,7 @@ const extractSearchResult = async (
 	result: SearxngResult,
 	index: number,
 	total: number,
-	config: ReturnType<typeof getRequiredWebSearchConfig>,
+	config: WebSearchRuntimeConfig,
 	options: SearchWebOptions,
 ): Promise<WebSearchSource | null> => {
 	await options.onProgress?.(
@@ -266,7 +306,7 @@ const extractSearchResult = async (
 
 const extractSourcesConcurrently = async (
 	searchResults: SearxngResult[],
-	config: ReturnType<typeof getRequiredWebSearchConfig>,
+	config: WebSearchRuntimeConfig,
 	options: SearchWebOptions,
 ): Promise<WebSearchSource[]> => {
 	const sources: Array<{ index: number; source: WebSearchSource }> = [];
@@ -317,7 +357,7 @@ export const searchWeb = async (
 	query: string,
 	options: SearchWebOptions = {},
 ): Promise<WebSearchSource[]> => {
-	const config = getRequiredWebSearchConfig();
+	const config = getRuntimeConfig(options);
 	await options.onProgress?.(`SearXNGで検索しています: ${query}`);
 	const searchResults = await searchSearxng(
 		query,

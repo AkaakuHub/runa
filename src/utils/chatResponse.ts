@@ -21,6 +21,9 @@ interface GenerateChatResponseOptions {
 interface WebSearchDecision {
 	needsSearch: boolean;
 	query: string;
+	maxCandidates: number;
+	maxResults: number;
+	concurrency: number;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -35,7 +38,10 @@ const parseWebSearchDecision = (text: string): WebSearchDecision => {
 
 	if (
 		typeof parsed.needsSearch !== "boolean" ||
-		typeof parsed.query !== "string"
+		typeof parsed.query !== "string" ||
+		typeof parsed.maxCandidates !== "number" ||
+		typeof parsed.maxResults !== "number" ||
+		typeof parsed.concurrency !== "number"
 	) {
 		throw new Error("Web検索判定のレスポンス形式が不正です。");
 	}
@@ -43,6 +49,9 @@ const parseWebSearchDecision = (text: string): WebSearchDecision => {
 	return {
 		needsSearch: parsed.needsSearch,
 		query: parsed.query,
+		maxCandidates: parsed.maxCandidates,
+		maxResults: parsed.maxResults,
+		concurrency: parsed.concurrency,
 	};
 };
 
@@ -60,10 +69,19 @@ const decideWebSearch = async (message: string): Promise<WebSearchDecision> => {
 JSONのみで返してください。
 {
   "needsSearch": true,
-  "query": "検索語"
+  "query": "検索語",
+  "maxCandidates": 5,
+  "maxResults": 2,
+  "concurrency": 2
 }
 
-検索しない場合はqueryを空文字にしてください。
+検索量の基準:
+- 発売日、価格、公式ページ確認など答えが1つの軽い確認: maxCandidates=5, maxResults=2, concurrency=2
+- 仕様、人物、会社、用語など複数根拠が必要な通常調査: maxCandidates=12, maxResults=4, concurrency=3
+- 複数観点の比較、炎上、ニュース経緯、網羅的調査: maxCandidates=25, maxResults=6, concurrency=4
+- ユーザーが「詳しく」「徹底的に」「全部」など広い調査を求めた場合だけ: maxCandidates=50, maxResults=10, concurrency=5
+
+検索しない場合はqueryを空文字、maxCandidates=0、maxResults=0、concurrency=0にしてください。
 
 ユーザーのメッセージ:
 ${message}`;
@@ -153,6 +171,9 @@ export async function generateChatResponse(
 
 		if (searchDecision.needsSearch) {
 			const sources = await searchWeb(searchDecision.query, {
+				concurrency: searchDecision.concurrency,
+				maxCandidates: searchDecision.maxCandidates,
+				maxResults: searchDecision.maxResults,
 				onProgress: options.onProgress,
 			});
 			prompt = buildWebGroundedPrompt(
