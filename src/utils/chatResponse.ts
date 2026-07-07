@@ -133,7 +133,7 @@ const buildWebGroundedPrompt = (
 
 以下の検索結果のURLと本文に基づいて回答してください。
 検索結果に書かれていないことは推測しないでください。
-回答には根拠にしたURLを含めてください。
+回答には根拠にしたURLを含めてください。URLは必ず<https://example.com/>の形式で囲ってください。
 ${context ? `\n直近の会話履歴:\n${context}\n` : ""}
 
 ${formatSourcesForPrompt(sources)}
