@@ -1,8 +1,13 @@
 import type { Message } from "discord.js";
+import { getChannelContextScopeId } from "./chatContextScope";
+import { generateChatResponse } from "./chatResponse";
 import { logError, logInfo } from "./logger";
 import { classifyMentionIntent } from "./mentionIntentClassifier";
 import { editAndSendLongMessage, replyOrSendLongMessage } from "./messageUtils";
 import { handleReminderMentionAction } from "./reminderMessageHandler";
+
+const PROGRESS_MESSAGE_LIMIT = 1800;
+const PROGRESS_VISIBLE_ITEMS = 8;
 
 export async function handleMentionMessage(message: Message): Promise<boolean> {
 	const botUser = message.client.user;
@@ -11,6 +16,10 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 	}
 
 	const contentWithoutMention = removeBotMention(message.content, botUser.id);
+	const contextScopeId = getChannelContextScopeId(
+		message.guildId,
+		message.channelId,
+	);
 
 	const stopTyping = startTyping(message);
 	const startedAt = Date.now();
@@ -19,6 +28,7 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 	);
 
 	let responseMessage: Message | null = null;
+	const progressMessages: string[] = [];
 	const reply = async (content: string): Promise<void> => {
 		if (!responseMessage) {
 			responseMessage = await replyOrSendLongMessage(message, content);
@@ -31,6 +41,20 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 			responseMessage = await replyOrSendLongMessage(message, content);
 		}
 	};
+	const replyProgress = async (content: string): Promise<void> => {
+		progressMessages.push(content);
+		const progressContent = buildProgressContent(progressMessages);
+		if (!responseMessage) {
+			responseMessage = await replyOrSendLongMessage(message, progressContent);
+			return;
+		}
+
+		try {
+			await responseMessage.edit(progressContent);
+		} catch (error) {
+			logError(`Failed to edit mention progress message: ${error}`);
+		}
+	};
 
 	try {
 		if (!contentWithoutMention) {
@@ -38,7 +62,13 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 			return true;
 		}
 
-		const intent = await classifyMentionIntent(contentWithoutMention);
+		await replyProgress("リマインダー操作か確認しています。");
+		const intent = await classifyMentionIntent(contentWithoutMention).catch(
+			(error) => {
+				logError(`Mention intent classification failed: ${error}`);
+				return { type: "general" as const, response: "" };
+			},
+		);
 		logInfo(
 			`Mention intent classified: type=${intent.type} elapsed=${Date.now() - startedAt}ms`,
 		);
@@ -48,7 +78,11 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 			return true;
 		}
 
-		await reply(intent.response);
+		const response = await generateChatResponse(contentWithoutMention, {
+			contextScopeId,
+			onProgress: replyProgress,
+		});
+		await reply(response);
 		logInfo(`Mention general replied: elapsed=${Date.now() - startedAt}ms`);
 		return true;
 	} catch (error) {
@@ -62,6 +96,23 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 	} finally {
 		stopTyping();
 	}
+}
+
+function buildProgressContent(messages: string[]): string {
+	const omittedCount = Math.max(0, messages.length - PROGRESS_VISIBLE_ITEMS);
+	const visibleMessages = messages.slice(-PROGRESS_VISIBLE_ITEMS);
+	const prefix =
+		omittedCount > 0 ? [`- 以前の進捗${omittedCount}件を省略しました。`] : [];
+	const content = [
+		...prefix,
+		...visibleMessages.map((item) => `- ${item}`),
+	].join("\n");
+
+	if (content.length <= PROGRESS_MESSAGE_LIMIT) {
+		return content;
+	}
+
+	return `${content.slice(0, PROGRESS_MESSAGE_LIMIT - 20)}\n...省略しました。`;
 }
 
 function buildMentionErrorMessage(error: unknown): string {

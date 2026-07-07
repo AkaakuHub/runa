@@ -4,10 +4,13 @@ import { logError, logInfo } from "./logger";
 
 type ReasoningEffort = "none" | "default" | "low" | "medium" | "high";
 
+const OVERLOADED_RETRY_DELAYS_MS = [60000, 90000, 120000, 180000];
+
 interface AiConfig {
 	apiKey?: string;
 	defaultModel?: string;
 	lightModel?: string;
+	fallbackModels?: string[];
 	maxRetries?: number;
 	baseDelay?: number;
 }
@@ -52,8 +55,12 @@ class AiClient {
 			lightModel:
 				config.lightModel ||
 				envConfig.GOOGLE_AI_LIGHT_MODEL ||
-				"gemini-2.5-flash-lite",
-			maxRetries: config.maxRetries || 3,
+				"gemini-3-flash-preview",
+			fallbackModels:
+				config.fallbackModels && config.fallbackModels.length > 0
+					? config.fallbackModels
+					: envConfig.GOOGLE_AI_FALLBACK_MODELS,
+			maxRetries: config.maxRetries || 5,
 			baseDelay: config.baseDelay || 1000,
 		};
 	}
@@ -82,11 +89,7 @@ class AiClient {
 		return Math.ceil((minutes * 60 + seconds) * 1000);
 	}
 
-	private async waitBeforeRetry(
-		error: unknown,
-		attempt: number,
-		maxRetries: number,
-	): Promise<boolean> {
+	private isRetryableError(error: unknown): boolean {
 		if (!(error instanceof Error)) {
 			return false;
 		}
@@ -97,25 +100,52 @@ class AiClient {
 		const isRateLimited =
 			message.includes("429") || message.toLowerCase().includes("quota");
 
-		if (!isOverloaded && !isRateLimited) {
+		return isOverloaded || isRateLimited;
+	}
+
+	private async waitBeforeRetry(
+		error: unknown,
+		attempt: number,
+		maxRetries: number,
+	): Promise<boolean> {
+		if (!this.isRetryableError(error)) {
 			return false;
 		}
-
 		if (attempt >= maxRetries) {
 			return false;
 		}
 
+		const message = error instanceof Error ? error.message : "";
 		let waitTime = 0;
-		if (isRateLimited) {
+		if (message.includes("429") || message.toLowerCase().includes("quota")) {
 			const parsed = this.parseRetryAfterMs(message);
 			waitTime = parsed ? parsed + 3000 : 60000;
 		} else {
-			waitTime = Math.min(this.config.baseDelay * 2 ** (attempt - 1), 8000);
+			waitTime =
+				OVERLOADED_RETRY_DELAYS_MS[attempt - 1] ??
+				OVERLOADED_RETRY_DELAYS_MS[OVERLOADED_RETRY_DELAYS_MS.length - 1];
 		}
 
 		logInfo(`Waiting ${waitTime}ms before retry...`);
 		await new Promise((resolve) => setTimeout(resolve, waitTime));
 		return true;
+	}
+
+	private getModelCandidates(requestedModel: string): string[] {
+		const candidates = [
+			requestedModel,
+			this.config.lightModel,
+			this.config.defaultModel,
+			...this.config.fallbackModels,
+		];
+		const uniqueCandidates: string[] = [];
+
+		for (const model of candidates) {
+			if (!model || uniqueCandidates.includes(model)) continue;
+			uniqueCandidates.push(model);
+		}
+
+		return uniqueCandidates;
 	}
 
 	private toThinkingLevel(
@@ -207,44 +237,51 @@ class AiClient {
 		let lastError: unknown;
 
 		const maxRetries = options?.maxRetries ?? this.config.maxRetries;
-		const model = options?.model ?? this.config.defaultModel;
+		const requestedModel = options?.model ?? this.config.defaultModel;
+		const modelCandidates = this.getModelCandidates(requestedModel);
 
 		for (let attempt = 1; attempt <= maxRetries; attempt++) {
-			try {
-				const response = await this.generateContent(prompt, model, options);
-				const usage = response.usageMetadata
-					? {
-							prompt_tokens: response.usageMetadata.promptTokenCount,
-							completion_tokens: response.usageMetadata.candidatesTokenCount,
-							thoughts_tokens: response.usageMetadata.thoughtsTokenCount,
-							total_tokens: response.usageMetadata.totalTokenCount,
-						}
-					: undefined;
-				const finishReason = this.toFinishReason(
-					response.candidates?.[0]?.finishReason,
-				);
-				const text = response.text ?? "";
-
-				if (usage) {
-					logInfo(
-						`Gemini usage (${model}) - prompt: ${usage.prompt_tokens}, completion: ${usage.completion_tokens}, thoughts: ${usage.thoughts_tokens ?? 0}, total: ${usage.total_tokens}`,
+			for (const model of modelCandidates) {
+				try {
+					const response = await this.generateContent(prompt, model, options);
+					const usage = response.usageMetadata
+						? {
+								prompt_tokens: response.usageMetadata.promptTokenCount,
+								completion_tokens: response.usageMetadata.candidatesTokenCount,
+								thoughts_tokens: response.usageMetadata.thoughtsTokenCount,
+								total_tokens: response.usageMetadata.totalTokenCount,
+							}
+						: undefined;
+					const finishReason = this.toFinishReason(
+						response.candidates?.[0]?.finishReason,
 					);
-				}
-				if (!text.trim()) {
-					logInfo(
-						`Gemini returned empty visible text (model: ${model}, finish_reason: ${finishReason})`,
-					);
-				}
+					const text = response.text ?? "";
 
-				return { text, finishReason, usage };
-			} catch (error: unknown) {
-				lastError = error;
-				logError(`Attempt ${attempt} with ${model} failed: ${error}`);
+					if (usage) {
+						logInfo(
+							`Gemini usage (${model}) - prompt: ${usage.prompt_tokens}, completion: ${usage.completion_tokens}, thoughts: ${usage.thoughts_tokens ?? 0}, total: ${usage.total_tokens}`,
+						);
+					}
+					if (!text.trim()) {
+						logInfo(
+							`Gemini returned empty visible text (model: ${model}, finish_reason: ${finishReason})`,
+						);
+					}
 
-				const waited = await this.waitBeforeRetry(error, attempt, maxRetries);
-				if (!waited) {
-					break;
+					return { text, finishReason, usage };
+				} catch (error: unknown) {
+					lastError = error;
+					logError(`Attempt ${attempt} with ${model} failed: ${error}`);
+
+					if (!this.isRetryableError(error)) {
+						throw error;
+					}
 				}
+			}
+
+			const waited = await this.waitBeforeRetry(lastError, attempt, maxRetries);
+			if (!waited) {
+				break;
 			}
 		}
 
@@ -254,20 +291,6 @@ class AiClient {
 	/**
 	 * チャット用のプロンプトを生成して実行
 	 */
-	async chat(
-		message: string,
-		systemPrompt?: string,
-		options?: GenerateTextOptions,
-	): Promise<string> {
-		const fullPrompt = systemPrompt
-			? `${systemPrompt}\n\nユーザーのメッセージ: ${message}\n回答:`
-			: `あなたは親切で有用なAIアシスタントです。以下のユーザーのメッセージに丁寧に回答してください。\n\nユーザーのメッセージ: ${message}\n回答:`;
-
-		return this.generateTextWithUsage(fullPrompt, options).then(
-			(result) => result.text,
-		);
-	}
-
 	getLightModel(): string {
 		return this.config.lightModel;
 	}
@@ -294,11 +317,5 @@ export const generateAiTextWithUsage = (
 
 export const estimateAiTextTokens = (text: string) =>
 	sharedAiClient.estimateTextTokens(text);
-
-/** シンプルなチャット用API（モデル名は隠蔽） */
-export const chatWithAssistant = (message: string, systemPrompt?: string) =>
-	sharedAiClient.chat(message, systemPrompt, {
-		model: sharedAiClient.getLightModel(),
-	});
 
 export const getLightAiModel = () => sharedAiClient.getLightModel();

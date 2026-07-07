@@ -61,7 +61,7 @@ async function classifyMentionIntentWithAi(
 - create/edit の text は、後段のリマインダーパーサーに渡す自然文として必要な内容を削らずに残す。
 - create の text では、引用符内の通知本文、開始日、開始時刻、繰り返し頻度、終了日、終了時刻をすべて保持する。
 - 「作成して」「リマインドを作成して」など操作依頼の末尾だけを除き、日時条件や「まで」「以降」は除かない。
-- 例: "@runa \"データマイニング課題、6/30まで\"というメッセージを、6/25以降の20:00に毎日リマインドを作成して。" は text を "\"データマイニング課題、6/30まで\"というメッセージを、6/25以降の20:00に毎日リマインド" にする。
+- 例: "@runa "データマイニング課題、6/30まで"というメッセージを、6/25以降の20:00に毎日リマインドを作成して。" は text を ""データマイニング課題、6/30まで"というメッセージを、6/25以降の20:00に毎日リマインド" にする。
 - general の場合は action/id/text を null にし、response に日本語の自然な短い返答を入れる。
 - general の response は、リマインダー登録や変更が完了したように書かない。
 
@@ -85,7 +85,6 @@ ${JSON.stringify(content)}`;
 		temperature: 0,
 		responseMimeType: "application/json",
 		responseJsonSchema: MENTION_INTENT_SCHEMA,
-		maxRetries: 1,
 		model: getLightAiModel(),
 	});
 

@@ -3,6 +3,10 @@
 	"version": "1.0.0",
 	"description": "A Discord bot that responds to specific messages.",
 	"main": "src/index.ts",
+	"packageManager": "pnpm@10.12.1",
+	"engines": {
+		"node": "24.1.0"
+	},
 	"scripts": {
 		"start": "tsx src/index.ts",
 		"build": "tsc",
@@ -20,6 +24,9 @@
 		"voicevox:stop": "./scripts/start-voicevox.sh stop",
 		"voicevox:status": "./scripts/start-voicevox.sh status",
 		"voicevox:restart": "./scripts/start-voicevox.sh restart",
+		"searxng:start": "docker compose -f compose.searxng.yml up -d",
+		"searxng:stop": "docker compose -f compose.searxng.yml down",
+		"searxng:logs": "docker compose -f compose.searxng.yml logs -f searxng",
 		"sudachi:setup": "./scripts/setup-sudachi.sh",
 		"start:voicevox": "TTS_PROVIDER=voicevox concurrently \"pnpm run voicevox:start\" \"pnpm run dev\"",
 		"start:curlvoice": "TTS_PROVIDER=curlvoice pnpm run dev"

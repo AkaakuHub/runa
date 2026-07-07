@@ -521,7 +521,8 @@ function validateAiResult(
 		if (repeatUntil.getTime() < remindAt.getTime()) {
 			return {
 				ok: false,
-				reason: "繰り返しの終了日時は最初のリマインド日時以降を指定してください。",
+				reason:
+					"繰り返しの終了日時は最初のリマインド日時以降を指定してください。",
 			};
 		}
 		if (repeatUntil.getTime() > maxReminderAt.getTime()) {
@@ -616,7 +617,8 @@ function validateAiEditResult(
 		if (remindAt && repeatUntil.getTime() < remindAt.getTime()) {
 			return {
 				ok: false,
-				reason: "繰り返しの終了日時は最初のリマインド日時以降を指定してください。",
+				reason:
+					"繰り返しの終了日時は最初のリマインド日時以降を指定してください。",
 			};
 		}
 		const maxReminderAt = new Date(now.getTime());
@@ -658,7 +660,9 @@ function parseAiRepeatFrequency(
 	}
 }
 
-function parseAiRepeatUntil(until: AiReminderParseResult["repeatUntil"]): Date | undefined {
+function parseAiRepeatUntil(
+	until: AiReminderParseResult["repeatUntil"],
+): Date | undefined {
 	if (!until) return undefined;
 
 	const parsedUntil = new Date(until);

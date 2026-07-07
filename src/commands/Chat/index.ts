@@ -1,5 +1,6 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import type { CommandDefinition } from "../../types";
+import { getChannelContextScopeId } from "../../utils/chatContextScope";
 import { generateChatResponse } from "../../utils/chatResponse";
 import { checkCommandCooldown } from "../../utils/commandCooldown";
 import { logError } from "../../utils/logger";
@@ -30,20 +31,26 @@ export const ChatCommand: CommandDefinition = {
 			}
 
 			await interaction.deferReply({
-				ephemeral: false,
+				ephemeral: true,
 			});
 
 			const message = interaction.options.getString("message", true);
 
 			const response = await generateChatResponse(message, {
+				contextScopeId: getChannelContextScopeId(
+					interaction.guildId,
+					interaction.channelId,
+				),
 				onProgress: async (content) => {
-					await interaction.editReply({ content });
+					await interaction.editReply({
+						content: limitProgressContent(content),
+					});
 				},
 			});
 
 			// 少し遅延を入れて進捗表示が確実に更新されるようにする
 			await new Promise((resolve) => setTimeout(resolve, 500));
-			await editAndFollowUpLongMessage(interaction, response);
+			await editAndFollowUpLongMessage(interaction, response, true);
 		} catch (error) {
 			logError(`Error executing chat command: ${error}`);
 			try {
@@ -56,3 +63,12 @@ export const ChatCommand: CommandDefinition = {
 		}
 	},
 };
+
+function limitProgressContent(content: string): string {
+	const maxLength = 1800;
+	if (content.length <= maxLength) {
+		return content;
+	}
+
+	return `${content.slice(0, maxLength - 20)}\n...省略しました。`;
+}

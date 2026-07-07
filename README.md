@@ -14,6 +14,9 @@ pnpm run sudachi:setup
 
 # botクライアント設定
 pnpm run admin
+# 管理画面はbot本体とは別プロセスです。
+# start:voicevox/start:curlvoiceでは起動しません。
+# 既定のURLはhttp://127.0.0.1:8787です。
 
 # 外部TTSを使用して起動
 pnpm run start:curlvoice

@@ -1,0 +1,14 @@
+[project]
+name = "runa-web-tools"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+	"crawl4ai",
+]
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["python"]

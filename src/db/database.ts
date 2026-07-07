@@ -43,5 +43,16 @@ function migrateDatabase(db: DatabaseSync): void {
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
+
+		CREATE TABLE IF NOT EXISTS chat_context_messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			scope_id TEXT NOT NULL,
+			role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+			content TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_chat_context_messages_scope_created
+			ON chat_context_messages (scope_id, created_at, id);
 	`);
 }

@@ -2,6 +2,7 @@ import type { CommandDefinition } from "../types";
 import { registerCommands } from "../utils/useCommands";
 import CcSorryCommand from "./CcSorry";
 import { ChatCommand } from "./Chat";
+import { ChatContextClearCommand } from "./ChatContextClear";
 import { DailyConfigCommand } from "./DailyConfig";
 import { DailySummaryCommand } from "./DailySummary";
 import { DebianCommand } from "./Debian";
@@ -53,6 +54,7 @@ const commandsList: CommandDefinition[] = [
 	TTSSpeakersCommand,
 	TTSSkipCommand,
 	ChatCommand,
+	ChatContextClearCommand,
 	SudachiCommand,
 	FxCommand,
 ];
