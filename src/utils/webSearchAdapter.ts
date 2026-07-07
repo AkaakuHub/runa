@@ -37,6 +37,11 @@ export interface WebSearchSource {
 	markdown: string;
 }
 
+interface ExtractedSources {
+	sources: WebSearchSource[];
+	attemptedCount: number;
+}
+
 interface SearchWebOptions {
 	maxCandidates?: number;
 	maxResults?: number;
@@ -286,15 +291,8 @@ const extractSearchResult = async (
 	);
 
 	if (extracted.status !== "ok") {
-		await options.onProgress?.(
-			`本文を抽出できなかったため除外します (${index + 1}/${total}): ${formatProgressTarget(result)}`,
-		);
 		return null;
 	}
-
-	await options.onProgress?.(
-		`本文を抽出しました (${index + 1}/${total}): ${formatProgressTarget(result)}`,
-	);
 
 	return {
 		title: extracted.title || result.title,
@@ -308,7 +306,7 @@ const extractSourcesConcurrently = async (
 	searchResults: SearxngResult[],
 	config: WebSearchRuntimeConfig,
 	options: SearchWebOptions,
-): Promise<WebSearchSource[]> => {
+): Promise<ExtractedSources> => {
 	const sources: Array<{ index: number; source: WebSearchSource }> = [];
 	let nextIndex = 0;
 
@@ -322,21 +320,15 @@ const extractSourcesConcurrently = async (
 				return;
 			}
 
-			try {
-				const source = await extractSearchResult(
-					result,
-					currentIndex,
-					searchResults.length,
-					config,
-					options,
-				);
-				if (source && sources.length < config.maxResults) {
-					sources.push({ index: currentIndex, source });
-				}
-			} catch {
-				await options.onProgress?.(
-					`本文抽出でエラーになったため除外します (${currentIndex + 1}/${searchResults.length}): ${formatProgressTarget(result)}`,
-				);
+			const source = await extractSearchResult(
+				result,
+				currentIndex,
+				searchResults.length,
+				config,
+				options,
+			).catch(() => null);
+			if (source && sources.length < config.maxResults) {
+				sources.push({ index: currentIndex, source });
 			}
 		}
 	};
@@ -348,9 +340,12 @@ const extractSourcesConcurrently = async (
 		),
 	);
 
-	return sources
-		.sort((left, right) => left.index - right.index)
-		.map((source) => source.source);
+	return {
+		attemptedCount: Math.min(nextIndex, searchResults.length),
+		sources: sources
+			.sort((left, right) => left.index - right.index)
+			.map((source) => source.source),
+	};
 };
 
 export const searchWeb = async (
@@ -367,17 +362,22 @@ export const searchWeb = async (
 	await options.onProgress?.(
 		`SearXNGで${searchResults.length}件の候補を見つけました。最大${config.maxResults}件の本文を並列${config.concurrency}で抽出します。`,
 	);
-	const sources = await extractSourcesConcurrently(
+	const extraction = await extractSourcesConcurrently(
 		searchResults,
 		config,
 		options,
 	);
+	const sources = extraction.sources;
 
 	if (sources.length === 0) {
 		throw new Error(
 			"Crawl4AIで本文を抽出できる検索結果が見つかりませんでした。",
 		);
 	}
+
+	await options.onProgress?.(
+		`Crawl4AIの本文抽出が完了しました: ${sources.length}件採用 / ${extraction.attemptedCount}件確認`,
+	);
 
 	return sources;
 };
