@@ -62,17 +62,16 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 			return true;
 		}
 
-		await replyProgress("リマインダー操作か確認しています。");
 		const intent = await classifyMentionIntent(contentWithoutMention).catch(
 			(error) => {
 				logError(`Mention intent classification failed: ${error}`);
-				return { type: "general" as const, response: "" };
+				return null;
 			},
 		);
 		logInfo(
-			`Mention intent classified: type=${intent.type} elapsed=${Date.now() - startedAt}ms`,
+			`Mention intent classified: type=${intent?.type ?? "unknown"} elapsed=${Date.now() - startedAt}ms`,
 		);
-		if (intent.type === "reminder") {
+		if (intent?.type === "reminder") {
 			await handleReminderMentionAction(message, intent.action, reply);
 			logInfo(`Mention reminder handled: elapsed=${Date.now() - startedAt}ms`);
 			return true;
@@ -80,6 +79,7 @@ export async function handleMentionMessage(message: Message): Promise<boolean> {
 
 		const response = await generateChatResponse(contentWithoutMention, {
 			contextScopeId,
+			webSearchDecision: intent?.webSearchDecision,
 			onProgress: replyProgress,
 		});
 		await reply(response);

@@ -15,10 +15,11 @@ const ANSWER_PROGRESS_MESSAGE = "回答を生成しています。";
 interface GenerateChatResponseOptions {
 	contextScopeId?: string;
 	systemPrompt?: string;
+	webSearchDecision?: WebSearchDecision;
 	onProgress?: (content: string) => Promise<void>;
 }
 
-interface WebSearchDecision {
+export interface WebSearchDecision {
 	needsSearch: boolean;
 	query: string;
 	maxCandidates: number;
@@ -161,12 +162,15 @@ export async function generateChatResponse(
 	options: GenerateChatResponseOptions = {},
 ): Promise<string> {
 	try {
-		await options.onProgress?.(CHAT_PROGRESS_MESSAGE);
+		if (!options.webSearchDecision) {
+			await options.onProgress?.(CHAT_PROGRESS_MESSAGE);
+		}
 		const systemPrompt = options.systemPrompt ?? DEFAULT_CHAT_SYSTEM_PROMPT;
 		const contextMessages = options.contextScopeId
 			? chatContextRepository.list(options.contextScopeId)
 			: [];
-		const searchDecision = await decideWebSearch(message);
+		const searchDecision =
+			options.webSearchDecision ?? (await decideWebSearch(message));
 		let prompt = buildStandardPrompt(message, systemPrompt, contextMessages);
 
 		if (searchDecision.needsSearch) {

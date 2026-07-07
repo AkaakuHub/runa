@@ -1,3 +1,4 @@
+import type { WebSearchDecision } from "./chatResponse";
 import { generateAiTextWithUsage, getLightAiModel } from "./useAI";
 
 export type ReminderMentionAction =
@@ -7,7 +8,7 @@ export type ReminderMentionAction =
 	| { type: "create"; text: string };
 
 type MentionIntent =
-	| { type: "general"; response: string }
+	| { type: "general"; response: string; webSearchDecision: WebSearchDecision }
 	| { type: "reminder"; action: ReminderMentionAction };
 
 interface AiMentionIntent {
@@ -18,6 +19,11 @@ interface AiMentionIntent {
 	text?: string | null;
 	response?: string | null;
 	confidence?: number;
+	needsSearch?: boolean;
+	query?: string;
+	maxCandidates?: number;
+	maxResults?: number;
+	concurrency?: number;
 }
 
 const MIN_CONFIDENCE = 0.55;
@@ -34,8 +40,25 @@ const MENTION_INTENT_SCHEMA = {
 		text: { type: "string" },
 		response: { type: "string" },
 		confidence: { type: "number" },
+		needsSearch: { type: "boolean" },
+		query: { type: "string" },
+		maxCandidates: { type: "number" },
+		maxResults: { type: "number" },
+		concurrency: { type: "number" },
 	},
-	required: ["intent", "action", "useLatest", "text", "response", "confidence"],
+	required: [
+		"intent",
+		"action",
+		"useLatest",
+		"text",
+		"response",
+		"confidence",
+		"needsSearch",
+		"query",
+		"maxCandidates",
+		"maxResults",
+		"concurrency",
+	],
 	additionalProperties: false,
 };
 
@@ -64,6 +87,13 @@ async function classifyMentionIntentWithAi(
 - 例: "@runa "データマイニング課題、6/30まで"というメッセージを、6/25以降の20:00に毎日リマインドを作成して。" は text を ""データマイニング課題、6/30まで"というメッセージを、6/25以降の20:00に毎日リマインド" にする。
 - general の場合は action/id/text を null にし、response に日本語の自然な短い返答を入れる。
 - general の response は、リマインダー登録や変更が完了したように書かない。
+- general の場合は、回答前にWeb検索が必要かも同時に判定する。
+- 最新情報、現在の状態、ニュース、価格、仕様、法律、API、ライブラリ、人物、会社、予定、出典確認が必要な質問は needsSearch を true にする。
+- リマインダー操作の場合は needsSearch を false、query を空文字、maxCandidates/maxResults/concurrency を 0 にする。
+- 発売日、価格、公式ページ確認など答えが1つの軽い確認: maxCandidates=5, maxResults=2, concurrency=2
+- 仕様、人物、会社、用語など複数根拠が必要な通常調査: maxCandidates=12, maxResults=4, concurrency=3
+- 複数観点の比較、ニュース経緯、網羅的調査: maxCandidates=25, maxResults=6, concurrency=4
+- ユーザーが「詳しく」「徹底的に」「全部」など広い調査を求めた場合だけ: maxCandidates=50, maxResults=10, concurrency=5
 
 JSONスキーマ:
 {
@@ -73,7 +103,12 @@ JSONスキーマ:
   "useLatest": boolean,
   "text": "作成または編集に必要な自然文" | null,
   "response": "generalの場合の返答" | null,
-  "confidence": 0.0-1.0
+  "confidence": 0.0-1.0,
+  "needsSearch": boolean,
+  "query": "検索語。検索しない場合は空文字",
+  "maxCandidates": number,
+  "maxResults": number,
+  "concurrency": number
 }
 
 入力:
@@ -94,13 +129,18 @@ ${JSON.stringify(content)}`;
 function normalizeMentionIntent(intent: AiMentionIntent): MentionIntent {
 	const generalResponse =
 		normalizeOptionalText(intent.response) ?? "うまく言葉が出ませんでした。";
+	const generalIntent: MentionIntent = {
+		type: "general",
+		response: generalResponse,
+		webSearchDecision: normalizeWebSearchDecision(intent),
+	};
 
 	if ((intent.confidence ?? 0) < MIN_CONFIDENCE) {
-		return { type: "general", response: generalResponse };
+		return generalIntent;
 	}
 
 	if (intent.intent !== "reminder") {
-		return { type: "general", response: generalResponse };
+		return generalIntent;
 	}
 
 	switch (intent.action) {
@@ -134,8 +174,23 @@ function normalizeMentionIntent(intent: AiMentionIntent): MentionIntent {
 				},
 			};
 		default:
-			return { type: "general", response: generalResponse };
+			return generalIntent;
 	}
+}
+
+function normalizeWebSearchDecision(
+	intent: AiMentionIntent,
+): WebSearchDecision {
+	const needsSearch = Boolean(intent.needsSearch);
+	const query = normalizeOptionalText(intent.query);
+
+	return {
+		needsSearch: needsSearch && Boolean(query),
+		query: needsSearch ? (query ?? "") : "",
+		maxCandidates: needsSearch ? (intent.maxCandidates ?? 12) : 0,
+		maxResults: needsSearch ? (intent.maxResults ?? 4) : 0,
+		concurrency: needsSearch ? (intent.concurrency ?? 3) : 0,
+	};
 }
 
 function normalizeOptionalText(
