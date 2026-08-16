@@ -5,13 +5,14 @@ import {
 	type Message,
 	type VoiceChannel,
 } from "discord.js";
+import { ngWordRepository } from "../db/ngWordRepository";
 import { handleGomamayoResponse } from "../response/Gomamayo";
 import { IyaResponse } from "../response/Iya";
-import { ngWordRepository } from "../db/ngWordRepository";
 import { MusicService } from "../services/MusicService";
 import type { IYAKind } from "../types";
 import { logDebug, logError, logInfo } from "../utils/logger";
 import { handleMentionMessage } from "../utils/mentionMessageHandler";
+import { replyMessage } from "../utils/messageUtils";
 import { detectSenryu } from "../utils/senryuDetector";
 import { buildSenryuReply, generateSenryuImage } from "../utils/senryuResponse";
 import { handleTTS } from "../utils/useTTS";
@@ -53,13 +54,13 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 			const attachment = new AttachmentBuilder(imageBuffer, {
 				name: "senryu-washi.png",
 			});
-			await message.reply({
+			await replyMessage(message, {
 				content: replyContent,
 				files: [attachment],
 			});
 		} catch (error) {
 			logError(`川柳画像生成に失敗しました: ${error}`);
-			await message.reply(replyContent);
+			await replyMessage(message, replyContent);
 		}
 	}
 
@@ -82,7 +83,8 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 	];
 
 	if (ngWordsRegex.some((regex) => regex.test(message.content))) {
-		await message.reply(
+		await replyMessage(
+			message,
 			"💢💢💢 **絶対に禁止されています！！！** 💢💢💢\nそんな言葉を使うなんてとんでもない！😡",
 		);
 		// がああパターンも含む場合は、この後の処理を継続しない
@@ -150,7 +152,8 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 			logDebug(
 				`YouTube: Bot接続先が別です current=${currentVoiceChannelId} user=${voiceChannel.id}`,
 			);
-			await message.reply(
+			await replyMessage(
+				message,
 				"ボットが別のボイスチャンネルに参加しています。 `/join` コマンドでチャンネルを移動してください",
 			);
 			return;
@@ -162,7 +165,7 @@ export const messageCreateHandler = async (message: Message): Promise<void> => {
 				message.guild.id,
 			);
 			if (response) {
-				await message.reply(response);
+				await replyMessage(message, response);
 			}
 
 			logInfo(

@@ -2,6 +2,7 @@ import {
 	type ChatInputCommandInteraction,
 	type Message,
 	MessageFlags,
+	type MessageReplyOptions,
 } from "discord.js";
 import { logError } from "./logger";
 
@@ -9,6 +10,42 @@ import { logError } from "./logger";
  * Discordの2000文字制限を考慮してメッセージを分割するユーティリティ
  */
 const DISCORD_CHUNK_LIMIT = 1800;
+
+type MessageReplyPayload =
+	| string
+	| Omit<MessageReplyOptions, "failIfNotExists">;
+
+async function sendMessageToChannel(
+	message: Message,
+	payload: MessageReplyPayload,
+): Promise<Message> {
+	if (!("send" in message.channel)) {
+		throw new Error("Channel does not support sending messages");
+	}
+
+	return message.channel.send(payload);
+}
+
+export async function replyMessage(
+	message: Message,
+	payload: MessageReplyPayload,
+): Promise<Message> {
+	if (message.system) {
+		return sendMessageToChannel(message, payload);
+	}
+
+	try {
+		return await message.reply(payload);
+	} catch (replyError) {
+		logError(`Failed to reply to message, sending to channel: ${replyError}`);
+		try {
+			return await sendMessageToChannel(message, payload);
+		} catch (sendError) {
+			logError(`Failed to send message to channel: ${sendError}`);
+			throw sendError;
+		}
+	}
+}
 
 /**
  * メッセージを指定された最大長に分割する
@@ -152,21 +189,7 @@ export async function replyOrSendLongMessage(
 		DISCORD_CHUNK_LIMIT,
 	);
 
-	let sentMessage: Message;
-	try {
-		sentMessage = await message.reply(chunks[0]);
-	} catch (replyError) {
-		logError(`Failed to reply to message, sending to channel: ${replyError}`);
-		if (!("send" in message.channel)) {
-			throw new Error("Channel does not support sending messages");
-		}
-		try {
-			sentMessage = await message.channel.send(chunks[0]);
-		} catch (sendError) {
-			logError(`Failed to send message to channel: ${sendError}`);
-			throw sendError;
-		}
-	}
+	const sentMessage = await replyMessage(message, chunks[0]);
 
 	for (let i = 1; i < chunks.length; i++) {
 		if ("send" in message.channel) {

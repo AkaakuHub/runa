@@ -1,6 +1,7 @@
 import type { Message } from "discord.js";
 import type { IYAKind } from "../../types";
 import { logError, logInfo } from "../../utils/logger";
+import { replyMessage } from "../../utils/messageUtils";
 
 export const IyaResponse = async (
 	message: Message,
@@ -13,7 +14,7 @@ export const IyaResponse = async (
 			"遊ぶ！": "assets/images/iya/play.png",
 			"ご飯を食べる！": "assets/images/iya/eat.png",
 		};
-		await message.reply({
+		await replyMessage(message, {
 			content: kind,
 			files: [dict[kind]],
 		});
